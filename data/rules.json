@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "source": "visualnovel CLAUDE.md, Comments + Prose sections (2026-08-24 snapshot)",
+  "rules": [
+    {"id": "C1", "name": "comment-describes-code-below", "desc": "A comment placed above an if/branch must describe that branch, not the opposite case; misplacement is a correctness bug."},
+    {"id": "C2", "name": "no-commented-out-code", "desc": "Commented-out code (a call, import, or block) must be deleted, not kept as commentary."},
+    {"id": "C3", "name": "no-restate-code", "desc": "A comment must not restate what the code already says; it must give a reason, constraint, or consequence."},
+    {"id": "C4", "name": "cite-named-constant", "desc": "A comment should cite a named constant's identifier rather than hardcoding its value in prose."},
+    {"id": "C5", "name": "rename-not-comment", "desc": "If a comment exists only to translate a bad identifier's meaning, rename the identifier instead of commenting it."},
+    {"id": "C6", "name": "comment-consequence-not-arguments", "desc": "A comment on a call site should say what the call does to the surroundings, not restate arguments already visible on screen."},
+    {"id": "C7", "name": "state-facts-not-defend-design", "desc": "A comment should state facts a reader could not derive (ordering constraint, platform quirk, live alternative), not defend or justify the design ('why this is the good version')."},
+    {"id": "C8", "name": "doc-comment-continues-declaration", "desc": "A doc comment continues its declaration grammatically; it must not re-supply the subject or narrate the signature."},
+    {"id": "C9", "name": "inline-vs-doc-punctuation", "desc": "An inline // note is an unpunctuated fragment; a /** */ doc comment is a punctuated sentence. Don't mix the conventions."},
+    {"id": "C10", "name": "non-doc-comment-slashes", "desc": "Non-doc comments use //, not /* */."},
+    {"id": "C11", "name": "non-doc-comment-length", "desc": "Non-doc comments are at most 3 lines except rare, genuinely load-bearing context."},
+    {"id": "C12", "name": "doc-comment-concise", "desc": "Doc comments say what the thing is and any non-obvious contract; they don't restate the signature or narrate the implementation."},
+    {"id": "P1", "name": "no-epigrams", "desc": "Prose must be plain and declarative, not an epigram or aphorism that needs a second read to parse."},
+    {"id": "P2", "name": "no-inverted-syntax-personification", "desc": "The sentence must inform, not perform; avoid inverted syntax and personification."},
+    {"id": "P3", "name": "no-metaphorical-equations", "desc": "Avoid 'X is Y' / 'X as Y' metaphorical equations ('the leak scan is the refusal'); say what happens instead."},
+    {"id": "P4", "name": "no-fragment-opener", "desc": "Do not name a placeholder and then withhold the real content behind a colon or dash ('The redactor to scan a report with: ...'). Lead with a complete sentence."},
+    {"id": "P5", "name": "no-double-negatives", "desc": "State the positive claim instead of a double negative ('cannot be relied on not to')."},
+    {"id": "P6", "name": "no-dangling-reference", "desc": "Avoid pronouns/ellipses that point outside the sentence ('the second case', 'asking twice is how...'); each sentence should carry its own referents."},
+    {"id": "P7", "name": "no-clause-a-else-b", "desc": "Avoid 'Resolve X: the named case when it exists, else the other case' constructions; spell out each case as its own ordinary sentence."},
+    {"id": "P8", "name": "no-trailing-adverb-on-noun-phrase", "desc": "Avoid an adverb hung off the end of a noun phrase ('the next pointerdown anywhere'); attach the qualification to a verb or state it as its own fact."},
+    {"id": "P9", "name": "no-nonassertive-under-definite", "desc": "Avoid 'any/anywhere/ever' modifying a definite description that names exactly one thing."},
+    {"id": "P10", "name": "no-rhetorical-emphasis", "desc": "Avoid bold/italic markup inside a sentence to mark emphasis; put the load-bearing claim first as plain text."},
+    {"id": "P11", "name": "accurate-head-noun", "desc": "The sentence's head noun must be what the thing actually is; don't assert it's an X and then retract that through a preposition ('as commands')."},
+    {"id": "P12", "name": "backticks-for-code-only", "desc": "Backticks are reserved for code symbols (identifiers, types, commands, file globs), not for a path or reference cited in prose."},
+    {"id": "P13", "name": "bracket-not-comma-alternative", "desc": "A subordinate alternative should be parenthesized, not fenced with paired commas which create ambiguity about clause boundaries."}
+  ]
+}

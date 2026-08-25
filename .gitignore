@@ -1,0 +1,5 @@
+model/
+train.log
+train_run.log
+__pycache__/
+*.pyc
