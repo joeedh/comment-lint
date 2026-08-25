@@ -14,3 +14,62 @@
  - Every 500 lines 
  - Is explaining math
 
+### Prose
+
+These rules govern every piece of prose in the repository. They apply to code comments, to
+this file, and to everything under `docs/`.
+
+- **Write plain declarative prose — no epigrams.** State the constraint or decision
+  directly: "An empty answer is deliberate and is passed to the model as-is", not "Empty is an
+  answer — silence, said out loud." If a sentence needs a second read to parse, rewrite it.
+  Specific patterns to catch:
+  - **Inverted syntax and personification** — the sentence performs rather than informs.
+  - **Metaphorical equations** — "The leak scan is the refusal", "what ships is identity",
+    "the project as commands". The connector word varies — do not get hung up on "is"
+    versus "as". Say what happens instead: "Refuses if the leak scan finds a known name
+    still in the body."
+  - **Fragment openers that defer the subject — never use this pattern.** Naming a placeholder
+    and then withholding the real content behind a colon or a dash is always wrong: "The
+    redactor to scan a report with: the one that wrote it, else one built from the project as it
+    stands." Lead with a complete sentence and name each case as you reach it. A doc comment is
+    not an exception, and deleting the label is not the fix, because the apposition left behind
+    is still headless. Supply a predicate instead. Write "Draws the links beneath the node
+    frames in screen space." rather than "The link underlay: a screen-space canvas beneath the
+    node frames." or the bare "Screen-space canvas beneath the node frames."
+  - **Double negatives** — "the palette cannot be relied on not to". State the positive claim.
+  - **Pronouns and ellipses that point outside the sentence** — "the second case", "asking
+    twice is how…" — each sentence should carry its own referents.
+  - **"Clause A, else B" constructions** — "Resolve a push's destination: the named window
+    when it still exists, else the focused window falling back to the most recently focused
+    one." Spell out the cases as ordinary sentences instead: "Pushes to the named window if it
+    still exists. Otherwise pushes to the focused window, or the most recently focused window
+    if none is focused."
+  - **Adverbs hung off the end of a noun phrase** — "the next pointerdown anywhere", "the
+    handler above". The adverb postmodifies the noun, but the reader cannot tell on first pass
+    whether it attaches to the noun or to the clause's verb, and an event or API name coined
+    from a verb ("pointerdown") re-parses as a clause when an adverb follows it. Attach the
+    qualification to a verb, or state it as its own fact: "the listener is on `window`".
+  - **Non-assertive words under a definite** — "any", "anywhere", "ever" range over
+    alternatives, so they fight a definite description that names exactly one thing. "A press
+    anywhere dismisses it" reads fine; "the next pointerdown anywhere" does not.
+  - **Rhetorical emphasis** — bold and italics inside a sentence mark the clause the author
+    found most interesting, not the one the reader needs first. Put the load-bearing claim in
+    the first sentence and drop the markup. A bolded lead-in that labels a Markdown bullet is
+    structure rather than emphasis, and is fine.
+  - **A head noun that is not what the thing is** — a module of commands documented as "The
+    prompt an asset is generated from, as commands" asserts that the module is a prompt, then
+    retracts it through a preposition. Lead with the head noun that names the thing —
+    "Commands for the prompt an asset is generated from" — and demote the rest to a
+    complement. A trailing ", as X" or ", in the form of X" is the same metaphorical equation
+    above smuggled in through an adjunct.
+- **Reserve backticks for code symbols.** Backticks belong on identifiers, types, commands,
+  and file globs the reader will type. A file path cited mid-sentence as a reference —
+  documentation/NodeEditor.md §3 — takes none, because marking it up gives it the same weight
+  as the identifiers around it and dilutes them. Markdown link text is the one exception and
+  keeps its backticks, where the marking separates a path from the prose around it rather than
+  competing with nearby identifiers.
+- **Bracket a subordinate alternative rather than fencing it with commas.** Parentheses mark the
+  material as skippable, so the reader gets a complete sentence either way; paired commas leave
+  it unclear whether the second comma closes an interpolation or opens a new clause. Write
+  "Dropping onto itself (or onto a neighbor it would split against) is not a rip". Drop any comma
+  that would follow the closing bracket — it separates the subject from its verb.
