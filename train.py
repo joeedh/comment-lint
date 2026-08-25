@@ -20,14 +20,17 @@ from sklearn.metrics import f1_score, precision_score, recall_score
 from transformers import (
     AutoModelForSequenceClassification,
     AutoTokenizer,
+    BertConfig,
+    BertForSequenceClassification,
     EvalPrediction,
     Trainer,
     TrainingArguments,
 )
 
-MODEL_NAME = "distilbert-base-uncased"
+MODEL_NAME = "prajjwal1/bert-tiny"
+TOKENIZER_NAME = "bert-base-uncased"  # bert-tiny shares this vocab but ships no fast-tokenizer file
 DATA_DIR = "data"
-OUT_DIR = "model"
+OUT_DIR = "model_bert_tiny"
 MAX_LEN = 96
 MAX_CLEAN = 2500  # downsample negatives; CPU training time is quadratic in seq len, linear in count
 SEED = 0
@@ -72,7 +75,7 @@ def main():
 
     ds = Dataset.from_list(examples).train_test_split(test_size=0.15, seed=SEED)
 
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
 
     def tokenize(batch):
         enc = tokenizer(batch["text"], truncation=True, max_length=MAX_LEN, padding="max_length")
@@ -82,13 +85,18 @@ def main():
     ds = ds.map(tokenize, batched=True)
     ds.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
 
-    model = AutoModelForSequenceClassification.from_pretrained(
-        MODEL_NAME,
+    model_kwargs = dict(
         num_labels=len(label_ids),
         problem_type="multi_label_classification",
         id2label={i: l for i, l in enumerate(label_ids)},
         label2id={l: i for i, l in enumerate(label_ids)},
     )
+    try:
+        model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME, **model_kwargs)
+    except ValueError:
+        # older configs (e.g. prajjwal1/bert-tiny) predate the `model_type` key AutoConfig needs
+        config = BertConfig.from_pretrained(MODEL_NAME, **model_kwargs)
+        model = BertForSequenceClassification.from_pretrained(MODEL_NAME, config=config)
 
     def compute_metrics(pred: EvalPrediction):
         probs = torch.sigmoid(torch.tensor(pred.predictions))
@@ -102,10 +110,10 @@ def main():
 
     args = TrainingArguments(
         output_dir=f"{OUT_DIR}/checkpoints",
-        num_train_epochs=3,
+        num_train_epochs=30,
         per_device_train_batch_size=48,
         per_device_eval_batch_size=64,
-        learning_rate=5e-5,
+        learning_rate=3e-4,
         eval_strategy="epoch",
         save_strategy="epoch",
         save_total_limit=1,
