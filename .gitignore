@@ -6,5 +6,6 @@ train_run.log
 __pycache__/
 *.pyc
 train_v2.log
+train_gate.log
 .commentlint-cache/
 .pytest_cache/

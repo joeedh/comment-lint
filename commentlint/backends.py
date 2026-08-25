@@ -48,10 +48,10 @@ class LinearBackend:
 
 
 class EncoderBackend:
-    """Fine-tuned bert-mini with a sigmoid head per rule and no gate."""
+    """Fine-tuned bert-tiny with a sigmoid head per rule, plus a gate if trained."""
 
     name = "encoder"
-    has_gate = False
+    has_gate = False  # set per instance: an older model dir ships rule heads only
 
     def __init__(self, model_dir=None):
         import torch
@@ -64,9 +64,13 @@ class EncoderBackend:
         self.model.eval()
         with open(os.path.join(self.dir, "labels.json"), encoding="utf-8") as f:
             self.labels = json.load(f)
+        # labels.json names the rule heads only, so one spare output column is
+        # the gate; the shape is what says whether this model was trained with one
+        self.has_gate = self.model.config.num_labels == len(self.labels) + 1
 
     def score_batch(self, texts, chunk=64):
         out = []
+        n = len(self.labels)
         for i in range(0, len(texts), chunk):
             batch = texts[i : i + chunk]
             enc = self.tokenizer(
@@ -74,7 +78,9 @@ class EncoderBackend:
             )
             with self.torch.no_grad():
                 probs = self.torch.sigmoid(self.model(**enc).logits)
-            out.extend((None, row.tolist()) for row in probs)
+            for row in probs:
+                vals = row.tolist()
+                out.append((vals[n] if self.has_gate else None, vals[:n]))
         return out
 
     def score(self, text):

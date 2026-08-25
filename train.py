@@ -45,6 +45,8 @@ MAX_CLEAN = 2500  # downsample untouched repo comments; they are the noisiest ne
 MIN_SUPPORT = 10  # a rule below this many positives cannot be learned, so it is left out of the head
 POS_WEIGHT_CAP = 20.0  # raw neg/pos reaches ~400 for the rarest rules and destabilises training
 MIN_PRECISION = 0.5  # a rule that cannot flag this cleanly is switched off rather than shipped noisy
+GATE_MIN_PRECISION = 0.75  # a comment wrongly called bad costs a rewrite of good prose
+GATE_LABEL = "__gate__"  # the extra head column, and its key in thresholds.json
 SEED = 0
 
 
@@ -215,6 +217,38 @@ def predict_probs(model, split, batch_size=64):
     return np.vstack(probs), np.array(split["labels"])
 
 
+def realistic_mask(kinds, y):
+    """Drop corrected-version negatives when scoring the gate.
+
+    The "after" text of an edited pair differs from its positive only in the
+    violated feature, which makes it the ideal contrastive training negative and
+    a misleading evaluation one -- nothing the gate meets in use is an
+    adversarial near-duplicate of a comment someone already fixed.
+    """
+    return np.array([y[i] == 1 or k != "after" for i, k in enumerate(kinds)])
+
+
+def calibrate_gate(probs, y, min_precision=GATE_MIN_PRECISION):
+    """Loosest cut still clearing the precision floor, else the strictest available.
+
+    The fallback deliberately isn't 0.5: that is a plausible calibration result
+    here, so returning it on failure would hide the failure.
+    """
+    best = None
+    for t in np.arange(0.05, 0.96, 0.01):
+        pred = (probs > t).astype(int)
+        if pred.sum() == 0:
+            continue
+        if precision_score(y, pred, zero_division=0) >= min_precision:
+            r = recall_score(y, pred, zero_division=0)
+            if best is None or r > best[0]:
+                best = (r, float(t))
+    if best is None:
+        print(f"gate: no cut reaches precision {min_precision}; falling back to 0.95", file=sys.stderr)
+        return 0.95
+    return best[1]
+
+
 def calibrate(probs, Y, label_ids, min_precision=MIN_PRECISION):
     """Pick each rule's threshold on a held-out split: most recall at acceptable precision.
 
@@ -264,9 +298,15 @@ def main():
 
     tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
 
+    # kept before set_format restricts the columns, and needed after it to mask
+    # the corrected-version rows out of the gate's calibration
+    calib_kind, test_kind = list(ds_calib["kind"]), list(ds_test["kind"])
+
     def tokenize(batch):
         enc = tokenizer(batch["text"], truncation=True, max_length=MAX_LEN, padding="max_length")
-        enc["labels"] = batch["labels"]
+        # the gate rides along as one more column: same trunk, one forward pass,
+        # and it learns "violates anything" jointly rather than as a second model
+        enc["labels"] = [row + [float(sum(row) > 0)] for row in batch["labels"]]
         return enc
 
     cols = ["input_ids", "attention_mask", "labels"]
@@ -276,11 +316,12 @@ def main():
     for d in (ds_train, ds_calib, ds_test):
         d.set_format(type="torch", columns=cols)
 
+    head_ids = label_ids + [GATE_LABEL]
     model_kwargs = dict(
-        num_labels=len(label_ids),
+        num_labels=len(head_ids),
         problem_type="multi_label_classification",
-        id2label={i: l for i, l in enumerate(label_ids)},
-        label2id={l: i for i, l in enumerate(label_ids)},
+        id2label={i: l for i, l in enumerate(head_ids)},
+        label2id={l: i for i, l in enumerate(head_ids)},
     )
     try:
         model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME, **model_kwargs)
@@ -337,14 +378,41 @@ def main():
     trainer.train(resume_from_checkpoint=last_ckpt)
 
     calib_probs, calib_Y = predict_probs(model, ds_calib)
-    thresholds = calibrate(calib_probs, calib_Y, label_ids)
+    thresholds = calibrate(calib_probs[:, : len(label_ids)], calib_Y[:, : len(label_ids)], label_ids)
+
+    gi = len(label_ids)
+    bca = calib_Y[:, gi].astype(int)
+    mca = realistic_mask(calib_kind, bca)
+    gate_cut = calibrate_gate(calib_probs[mca, gi], bca[mca])
+    thresholds[GATE_LABEL] = gate_cut
 
     test_probs, test_Y = predict_probs(model, ds_test)
     thr = np.array([thresholds[l] for l in label_ids])
-    test_pred = (test_probs > thr).astype(int)
+    test_pred = (test_probs[:, : len(label_ids)] > thr).astype(int)
+
+    bte = test_Y[:, gi].astype(int)
+    mte = realistic_mask(test_kind, bte)
+    g = test_probs[mte, gi]
+    gp = (g > gate_cut).astype(int)
+    gate_auc = float(roc_auc_score(bte[mte], g))
+    print(f"\nSTAGE 1 -- does this comment violate anything?  (cut {gate_cut:.2f})")
+    print(f"  AUC {gate_auc:.3f}   base rate {bte[mte].mean():.1%}")
+    print(
+        f"  precision {precision_score(bte[mte], gp, zero_division=0):.2f}   "
+        f"recall {recall_score(bte[mte], gp, zero_division=0):.2f}"
+    )
+
+    pos = np.where(bte == 1)[0]
+    P = test_probs[:, : len(label_ids)]
+    topk = {}
+    print(f"\nSTAGE 2 -- which rule, given the comment is bad?  ({len(pos)} test positives)")
+    for k in (1, 2, 3):
+        topk[k] = sum(1 for i in pos if test_Y[i, np.argsort(-P[i])[:k]].sum() > 0) / len(pos)
+        print(f"  a true rule is in the top {k}: {topk[k]:.1%}")
 
     print("\n=== held-out test, calibrated thresholds ===")
-    print(classification_report(test_Y, test_pred, target_names=label_ids, zero_division=0, digits=3))
+    print(classification_report(test_Y[:, : len(label_ids)], test_pred,
+                                target_names=label_ids, zero_division=0, digits=3))
 
     # AUC is the threshold-free read on whether a rule carries signal at all;
     # F1 can be zero purely because the cut landed badly on a rare label.
@@ -361,7 +429,16 @@ def main():
     with open(f"{OUT_DIR}/thresholds.json", "w", encoding="utf-8") as f:
         json.dump(thresholds, f, indent=2)
     with open(f"{OUT_DIR}/coverage.json", "w", encoding="utf-8") as f:
-        json.dump({"trained": label_ids, "untrained": {r: c for r, c in dropped}}, f, indent=2)
+        json.dump(
+            {
+                "trained": label_ids,
+                "untrained": {r: c for r, c in dropped},
+                "gate": {"cut": gate_cut, "auc": gate_auc},
+                "attribution": {f"top{k}": v for k, v in topk.items()},
+            },
+            f,
+            indent=2,
+        )
 
 
 if __name__ == "__main__":

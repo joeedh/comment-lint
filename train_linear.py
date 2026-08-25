@@ -38,7 +38,8 @@ import train as T
 
 OUT_DIR = os.environ.get("CL_OUT", "model_linear")
 C = float(os.environ.get("CL_C", "1.0"))
-GATE_MIN_PRECISION = 0.75  # a comment wrongly called bad costs a rewrite of good prose
+# the gate's masking and cut policy live in train.py so both models share one
+realistic_mask, calibrate_gate = T.realistic_mask, T.calibrate_gate
 
 
 def build_vectorizer():
@@ -70,38 +71,6 @@ def probs_for(heads, X):
     return out
 
 
-def realistic_mask(split, y):
-    """Drop corrected-version negatives when scoring the gate.
-
-    The "after" text of an edited pair differs from its positive only in the
-    violated feature, which makes it the ideal contrastive training negative and
-    a misleading evaluation one -- nothing the gate meets in use is an
-    adversarial near-duplicate of a comment someone already fixed.
-    """
-    return np.array([y[i] == 1 or k != "after" for i, k in enumerate(split["kind"])])
-
-
-def calibrate_gate(probs, y, min_precision=GATE_MIN_PRECISION):
-    """Loosest cut still clearing the precision floor, else the strictest available.
-
-    The fallback deliberately isn't 0.5: that is a plausible calibration result
-    here, so returning it on failure would hide the failure.
-    """
-    best = None
-    for t in np.arange(0.05, 0.96, 0.01):
-        pred = (probs > t).astype(int)
-        if pred.sum() == 0:
-            continue
-        if precision_score(y, pred, zero_division=0) >= min_precision:
-            r = recall_score(y, pred, zero_division=0)
-            if best is None or r > best[0]:
-                best = (r, float(t))
-    if best is None:
-        print(f"gate: no cut reaches precision {min_precision}; falling back to 0.95", file=sys.stderr)
-        return 0.95
-    return best[1]
-
-
 def main():
     all_rule_ids = T.load_rules()
     pairs = T.load_pairs()
@@ -123,7 +92,7 @@ def main():
     print(f"features: {Xtr.shape[1]}", file=sys.stderr)
 
     gate = LogisticRegression(max_iter=3000, C=C, class_weight="balanced").fit(Xtr, btr)
-    mca, mte = realistic_mask(ds_calib, bca), realistic_mask(ds_test, bte)
+    mca, mte = realistic_mask(ds_calib["kind"], bca), realistic_mask(ds_test["kind"], bte)
     gate_cut = calibrate_gate(gate.predict_proba(Xca)[:, 1][mca], bca[mca])
 
     g = gate.predict_proba(Xte)[:, 1][mte]
