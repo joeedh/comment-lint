@@ -1,4 +1,4 @@
-model/
+model/checkpoints/
 train.log
 train_run.log
 __pycache__/
