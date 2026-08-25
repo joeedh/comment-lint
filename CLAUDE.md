@@ -6,6 +6,33 @@
   - When a plan is completed it should be pressure tested with an agent, and the 
     results folded back in.
 
+## Orientation
+* docs/architecture.md describes how the tool is put together and why. Read it before
+  moving anything across a module boundary.
+* The taxonomy is data/rules.json: 25 rules, of which 16 have enough examples to train.
+* Scoring has two stages. A gate decides whether a comment breaks some rule, then the
+  per-rule heads are ranked against each other. A ranked rule is a suspicion, not a
+  detection, and anything that presents it as a detection overstates what the model knows.
+
+## Running things
+* `python task.py` lists every task. `python task.py check` runs the tests and mypy
+  together and is the gate before a commit.
+* Prefer `python task.py typecheck` over calling mypy directly. mypy.ini excludes tests/
+  and data/, so naming either on the command line checks nothing while looking like it
+  did; task.py carries the file list that is actually correct.
+
+## Invariants
+* `cli.py` must not import `backends.py` at module scope. Importing scikit-learn costs
+  2.4s and a cached run has to reach its answer without it. tests/test_cache.py fails if
+  the import graph regresses, and no other test will.
+* Calibrated cuts belong in the model directory's thresholds.json, never in a shared
+  constant. A cut describes one model's score distribution and does not transfer.
+* `comments/normalize.py` has to match the miner that produced the training data, and
+  that miner was never committed. tests/test_extract.py checks the module byte for byte
+  against the corpus, so change it only with that test's verdict in hand.
+* Model directories are gitignored apart from `model/` and `model_linear/`, which keeps a
+  new experiment out of the repository until someone decides to add it.
+
 ## Comments 
 * Temporary non-doc comments must start with CLAUDENODE: for later stripping.
   - A 'doc' comment is a jsdox or doxygen type comment that explains a specific

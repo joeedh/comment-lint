@@ -17,4 +17,4 @@ error and a broken test show up in the same pass. Extra arguments reach the unde
 tool: `python task.py test -k discover` goes to pytest. Scanning follows the linter's own
 exit codes, where 1 means findings and 2 means a bad argument.
 
-See docs/scanning.md for the linter itself.
+See docs/scanning.md for using the linter and docs/architecture.md for how it is built.
