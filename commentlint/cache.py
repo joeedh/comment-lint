@@ -16,6 +16,7 @@ the cache file, which is surprise data loss with no upside.
 import hashlib
 import json
 import os
+from typing import Any, Iterable
 
 from . import __version__
 
@@ -24,14 +25,18 @@ CACHE_DIR_PLAIN = ".commentlint-cache"
 CACHE_FILE = "findings.json"
 MODEL_FILES = ("model.joblib", "labels.json", "thresholds.json")
 
+Finding = dict[str, Any]
+Stamp = dict[str, int | str]
+Entry = dict[str, Any]  # {"stamp": Stamp, "findings": list[Finding], "comments": int}
 
-def default_location(cwd=None):
+
+def default_location(cwd: str | None = None) -> str:
     cwd = cwd or os.getcwd()
     base = CACHE_DIR_NODE if os.path.isdir(os.path.join(cwd, "node_modules")) else CACHE_DIR_PLAIN
     return os.path.join(cwd, base, CACHE_FILE)
 
 
-def model_fingerprint(model_dir):
+def model_fingerprint(model_dir: str) -> str:
     """blake2b over the model artifacts themselves, not their names."""
     h = hashlib.blake2b(digest_size=16)
     for name in MODEL_FILES:
@@ -45,7 +50,7 @@ def model_fingerprint(model_dir):
     return h.hexdigest()
 
 
-def run_key(model_dir, options):
+def run_key(model_dir: str, options: dict[str, Any]) -> str:
     import sys
 
     h = hashlib.blake2b(digest_size=16)
@@ -56,7 +61,7 @@ def run_key(model_dir, options):
     return h.hexdigest()
 
 
-def file_stamp(path, strategy="metadata"):
+def file_stamp(path: str, strategy: str = "metadata") -> Stamp:
     st = os.stat(path)
     if strategy == "content":
         h = hashlib.blake2b(digest_size=16)
@@ -70,17 +75,17 @@ def file_stamp(path, strategy="metadata"):
 class Cache:
     """Findings keyed by path, dropped wholesale when the run key changes."""
 
-    def __init__(self, path, key, strategy="metadata", enabled=True):
+    def __init__(self, path: str, key: str, strategy: str = "metadata", enabled: bool = True) -> None:
         self.path = path
         self.key = key
         self.strategy = strategy
         self.enabled = enabled
-        self.entries = {}
+        self.entries: dict[str, Entry] = {}
         self.dirty = False
         if enabled:
             self._read()
 
-    def _read(self):
+    def _read(self) -> None:
         try:
             with open(self.path, encoding="utf-8") as f:
                 data = json.load(f)
@@ -89,7 +94,7 @@ class Cache:
         if data.get("key") == self.key:
             self.entries = data.get("files", {})
 
-    def get(self, path):
+    def get(self, path: str) -> tuple[list[Finding], int] | None:
         """Cached (findings, comment count), or None when it must be rescanned."""
         if not self.enabled:
             return None
@@ -103,7 +108,7 @@ class Cache:
             return None
         return entry.get("findings", []), entry.get("comments", 0)
 
-    def put(self, path, findings, comments):
+    def put(self, path: str, findings: list[Finding], comments: int) -> None:
         if not self.enabled:
             return
         try:
@@ -113,7 +118,7 @@ class Cache:
         self.entries[_norm(path)] = {"stamp": stamp, "findings": findings, "comments": comments}
         self.dirty = True
 
-    def save(self, seen=None):
+    def save(self, seen: Iterable[str] | None = None) -> None:
         """Write the cache, dropping entries for files that are gone."""
         if not self.enabled or not self.dirty:
             return
@@ -127,5 +132,5 @@ class Cache:
         os.replace(tmp, self.path)
 
 
-def _norm(path):
+def _norm(path: str) -> str:
     return os.path.normcase(os.path.abspath(path)).replace("\\", "/")

@@ -13,8 +13,10 @@ needed. Thresholds are calibrated per label, not fixed at 0.5.
 import json
 import os
 import sys
+from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 import torch
 from datasets import Dataset
 from sklearn.metrics import (
@@ -50,13 +52,13 @@ GATE_LABEL = "__gate__"  # the extra head column, and its key in thresholds.json
 SEED = 0
 
 
-def load_rules():
+def load_rules() -> list[str]:
     with open(f"{DATA_DIR}/rules.json", encoding="utf-8") as f:
         rules = json.load(f)["rules"]
     return [r["id"] for r in rules]
 
 
-def load_pairs():
+def load_pairs() -> list[dict[str, Any]]:
     """Prefer the consensus file if data/merge_labels.py has been run."""
     path = f"{DATA_DIR}/labeled_all_v2.jsonl"
     if not os.path.exists(path):
@@ -66,7 +68,9 @@ def load_pairs():
         return [json.loads(line) for line in f]
 
 
-def select_labels(all_rule_ids, pairs):
+def select_labels(
+    all_rule_ids: list[str], pairs: list[dict[str, Any]]
+) -> tuple[list[str], list[tuple[str, int]], dict[str, int]]:
     """Keep only rules with enough positives to train on, in taxonomy order."""
     counts = {r: 0 for r in all_rule_ids}
     for row in pairs:
@@ -78,7 +82,7 @@ def select_labels(all_rule_ids, pairs):
     return kept, dropped, counts
 
 
-def load_examples(label_ids, pairs):
+def load_examples(label_ids: list[str], pairs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Assemble training rows.
 
     Three sources, in decreasing order of how trustworthy their labels are:
@@ -98,9 +102,9 @@ def load_examples(label_ids, pairs):
     """
     label_index = {l: i for i, l in enumerate(label_ids)}
     zeros = [0.0] * len(label_ids)
-    examples = []
+    examples: list[dict[str, Any]] = []
 
-    def vec(labels):
+    def vec(labels: list[str]) -> list[float]:
         v = list(zeros)
         for l in labels:
             if l in label_index:
@@ -147,7 +151,9 @@ def load_examples(label_ids, pairs):
     return examples
 
 
-def three_way_split(examples, seed=SEED):
+def three_way_split(
+    examples: list[dict[str, Any]], seed: int = SEED
+) -> tuple[Dataset, Dataset, Dataset]:
     """Split so calib/test draw only from rows both labelers could agree on.
 
     Rows they split on still train -- they carry real signal, just not a
@@ -161,7 +167,7 @@ def three_way_split(examples, seed=SEED):
     held = [pool[i] for i in order[:n_held]]
     train = [pool[i] for i in order[n_held:]] + train_only
 
-    def strip(rows, use_eval):
+    def strip(rows: list[dict[str, Any]], use_eval: bool) -> list[dict[str, Any]]:
         return [
             {"text": r["text"], "labels": r["labels_eval" if use_eval else "labels"], "kind": r["kind"]}
             for r in rows
@@ -175,7 +181,7 @@ def three_way_split(examples, seed=SEED):
     )
 
 
-def pos_weights(train_split, n_labels):
+def pos_weights(train_split: Dataset, n_labels: int) -> torch.Tensor:
     """Per-label neg/pos ratio, capped, so rare rules are not optimised away."""
     Y = np.array(train_split["labels"])
     pos = Y.sum(axis=0)
@@ -191,19 +197,27 @@ class WeightedTrainer(Trainer):
     because predicting zero minimises unweighted BCE.
     """
 
-    def __init__(self, *args, pos_weight=None, **kwargs):
+    def __init__(self, *args: Any, pos_weight: torch.Tensor | None = None, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.pos_weight = pos_weight
 
-    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
+    # transformers' Trainer.compute_loss also takes `num_items_in_batch`; **kwargs
+    # absorbs it fine at runtime, but that makes this an LSP-incompatible override.
+    def compute_loss(  # type: ignore[override]
+        self, model: Any, inputs: dict[str, Any], return_outputs: bool = False, **kwargs: Any
+    ) -> Any:
         labels = inputs.pop("labels")
         outputs = model(**inputs)
-        loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=self.pos_weight.to(outputs.logits.device))
+        # self.pos_weight is None only if this Trainer is constructed without the
+        # pos_weight kwarg, which no caller here does; see __init__ above.
+        loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=self.pos_weight.to(outputs.logits.device))  # type: ignore[union-attr]
         loss = loss_fn(outputs.logits, labels.float())
         return (loss, outputs) if return_outputs else loss
 
 
-def predict_probs(model, split, batch_size=64):
+def predict_probs(
+    model: Any, split: Dataset, batch_size: int = 64
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
     model.eval()
     probs = []
     for i in range(0, len(split), batch_size):
@@ -217,7 +231,7 @@ def predict_probs(model, split, batch_size=64):
     return np.vstack(probs), np.array(split["labels"])
 
 
-def realistic_mask(kinds, y):
+def realistic_mask(kinds: list[str], y: npt.NDArray[np.float64]) -> npt.NDArray[np.bool_]:
     """Drop corrected-version negatives when scoring the gate.
 
     The "after" text of an edited pair differs from its positive only in the
@@ -228,7 +242,9 @@ def realistic_mask(kinds, y):
     return np.array([y[i] == 1 or k != "after" for i, k in enumerate(kinds)])
 
 
-def calibrate_gate(probs, y, min_precision=GATE_MIN_PRECISION):
+def calibrate_gate(
+    probs: npt.NDArray[np.float64], y: npt.NDArray[np.float64], min_precision: float = GATE_MIN_PRECISION
+) -> float:
     """Loosest cut still clearing the precision floor, else the strictest available.
 
     The fallback deliberately isn't 0.5: that is a plausible calibration result
@@ -249,7 +265,12 @@ def calibrate_gate(probs, y, min_precision=GATE_MIN_PRECISION):
     return best[1]
 
 
-def calibrate(probs, Y, label_ids, min_precision=MIN_PRECISION):
+def calibrate(
+    probs: npt.NDArray[np.float64],
+    Y: npt.NDArray[np.float64],
+    label_ids: list[str],
+    min_precision: float = MIN_PRECISION,
+) -> dict[str, float]:
     """Pick each rule's threshold on a held-out split: most recall at acceptable precision.
 
     A single 0.5 cut silences every rule whose probabilities sit low because it
@@ -276,7 +297,7 @@ def calibrate(probs, Y, label_ids, min_precision=MIN_PRECISION):
     return thresholds
 
 
-def main():
+def main() -> None:
     all_rule_ids = load_rules()
     pairs = load_pairs()
     label_ids, dropped, counts = select_labels(all_rule_ids, pairs)
@@ -317,7 +338,7 @@ def main():
         d.set_format(type="torch", columns=cols)
 
     head_ids = label_ids + [GATE_LABEL]
-    model_kwargs = dict(
+    model_kwargs: dict[str, Any] = dict(
         num_labels=len(head_ids),
         problem_type="multi_label_classification",
         id2label={i: l for i, l in enumerate(head_ids)},
@@ -330,7 +351,7 @@ def main():
         config = BertConfig.from_pretrained(MODEL_NAME, **model_kwargs)
         model = BertForSequenceClassification.from_pretrained(MODEL_NAME, config=config)
 
-    def compute_metrics(pred: EvalPrediction):
+    def compute_metrics(pred: EvalPrediction) -> dict[str, Any]:
         probs = torch.sigmoid(torch.tensor(pred.predictions)).numpy()
         preds = (probs > 0.5).astype(int)
         labels = pred.label_ids

@@ -15,6 +15,7 @@ import json
 import os
 import sys
 import time
+from typing import Any
 
 from . import ENCODER_DIR, LINEAR_DIR, __version__
 from . import cache as cache_mod
@@ -22,6 +23,7 @@ from . import config as config_mod
 from . import rules as rules_mod
 from .comments import EXTENSIONS, UnparseableSource, extract_file
 from .comments import filters
+from .comments.base import Comment
 from .discover import discover
 
 EXIT_CLEAN, EXIT_FINDINGS, EXIT_USAGE, EXIT_INTERNAL = 0, 1, 2, 3
@@ -30,7 +32,7 @@ DEFAULT_LIMIT = 50
 GLOB_CHARS = set("*?[")
 
 
-def build_parser():
+def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="commentlint",
         description="Flag code comments that break the project's comment rules.",
@@ -66,8 +68,8 @@ def build_parser():
 class Options:
     """CLI over config, since the CLI is the more specific statement."""
 
-    def __init__(self, args, cfg):
-        def pick(name, key, default):
+    def __init__(self, args: argparse.Namespace, cfg: dict[str, Any]) -> None:
+        def pick(name: str, key: str, default: Any) -> Any:
             v = getattr(args, name, None)
             if v not in (None, [], False):
                 return v
@@ -91,7 +93,7 @@ class Options:
         self.fingerprint_dir = self.model or default_dir
 
 
-def looks_like_path(arg):
+def looks_like_path(arg: str) -> bool:
     """Whether a bare positional is a path rather than literal comment text.
 
     A single token with no whitespace is taken as a path even when nothing is
@@ -105,7 +107,7 @@ def looks_like_path(arg):
     return not any(c.isspace() for c in arg)
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> int:
     # comments in this corpus are 25% em-dash; the Windows console default
     # codepage turns those into replacement characters
     for stream in (sys.stdout, sys.stderr):
@@ -138,7 +140,7 @@ def main(argv=None):
     return run_scan(args, opts)
 
 
-def run_single(text, args, opts):
+def run_single(text: str, args: argparse.Namespace, opts: Options) -> int:
     from .backends import load
 
     backend, rule_desc, thresholds = load(opts.backend, opts.model)
@@ -164,7 +166,7 @@ def run_single(text, args, opts):
     return EXIT_FINDINGS if (gate is not None and gate >= cut) else EXIT_CLEAN
 
 
-def run_coverage(args, opts):
+def run_coverage(args: argparse.Namespace, opts: Options) -> int:
     path = os.path.join(opts.fingerprint_dir, "coverage.json")
     if not os.path.exists(path):
         print("no coverage.json; retrain to generate it", file=sys.stderr)
@@ -191,9 +193,9 @@ def run_coverage(args, opts):
     return EXIT_CLEAN
 
 
-def run_scan(args, opts):
+def run_scan(args: argparse.Namespace, opts: Options) -> int:
     started = time.time()
-    skipped = []
+    skipped: list[tuple[str, str]] = []
 
     try:
         files = discover(
@@ -216,10 +218,10 @@ def run_scan(args, opts):
         enabled=opts.cache,
     )
 
-    per_file = {}
-    counts = {}
-    pending = []  # (path, Comment) awaiting a model score
-    fresh = []  # files scanned this run, so worth writing back
+    per_file: dict[str, list[cache_mod.Finding]] = {}
+    counts: dict[str, int] = {}
+    pending: list[tuple[str, Comment]] = []  # (path, Comment) awaiting a model score
+    fresh: list[str] = []  # files scanned this run, so worth writing back
 
     for path in files:
         hit = cache.get(path)
@@ -258,11 +260,13 @@ def run_scan(args, opts):
             return EXIT_USAGE
         scores = backend.score_batch([c.text for _, c in pending])
         for (path, c), (gate, probs) in zip(pending, scores):
-            if gate < cut:
+            # Score.gate is `float | None` for a gateless backend; has_gate is
+            # checked above, so it is never None on this path.
+            if gate < cut:  # type: ignore[operator]
                 continue
             order = sorted(range(len(probs)), key=lambda i: -probs[i])[: args.top]
             ranked = [(backend.labels[i], probs[i]) for i in order]
-            per_file[path].append(_finding(c, ranked[0][0], gate, ranked, "model"))
+            per_file[path].append(_finding(c, ranked[0][0], gate, ranked, "model"))  # type: ignore[arg-type]
 
     for path in fresh:
         cache.put(path, per_file.get(path, []), counts.get(path, 0))
@@ -276,7 +280,13 @@ def run_scan(args, opts):
     return report(per_file, files, args, opts, cut, skipped, n_comments, n_cached, time.time() - started)
 
 
-def _finding(c, rule, score, ranked, source):
+def _finding(
+    c: Comment,
+    rule: str,
+    score: float,
+    ranked: list[tuple[str, float]],
+    source: str,
+) -> cache_mod.Finding:
     return {
         "line": c.line, "col": c.col, "kind": c.kind, "rule": rule,
         "score": round(float(score), 4),
@@ -285,7 +295,17 @@ def _finding(c, rule, score, ranked, source):
     }
 
 
-def report(per_file, files, args, opts, cut, skipped, n_comments, n_cached, elapsed):
+def report(
+    per_file: dict[str, list[cache_mod.Finding]],
+    files: list[str],
+    args: argparse.Namespace,
+    opts: Options,
+    cut: float,
+    skipped: list[tuple[str, str]],
+    n_comments: int,
+    n_cached: int,
+    elapsed: float,
+) -> int:
     flat = [(p, f) for p in files for f in per_file.get(p, [])]
     total = len(flat)
 
@@ -300,7 +320,7 @@ def report(per_file, files, args, opts, cut, skipped, n_comments, n_cached, elap
     shown = listed if opts.limit is None or opts.limit <= 0 else listed[: opts.limit]
 
     if args.as_json:
-        by_file = {}
+        by_file: dict[str, list[cache_mod.Finding]] = {}
         for p, f in flat:
             by_file.setdefault(p, []).append(f)
         json.dump({
@@ -344,14 +364,14 @@ def report(per_file, files, args, opts, cut, skipped, n_comments, n_cached, elap
     return EXIT_FINDINGS if total else EXIT_CLEAN
 
 
-def _rel(path):
+def _rel(path: str) -> str:
     try:
         return os.path.relpath(path).replace("\\", "/")
     except ValueError:
         return path
 
 
-def entry():
+def entry() -> None:
     try:
         sys.exit(main())
     except KeyboardInterrupt:

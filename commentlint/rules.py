@@ -15,14 +15,15 @@ SCAN_THRESHOLD = 0.70
 SINGLE_THRESHOLD = 0.50
 
 
-def descriptions():
+def descriptions() -> dict[str, str]:
     with open(RULES_PATH, encoding="utf-8") as f:
         return {r["id"]: r["desc"] for r in json.load(f)["rules"]}
 
 
-def thresholds(model_dir=None):
+def thresholds(model_dir: str | None = None) -> dict[str, float]:
     path = os.path.join(model_dir or LINEAR_DIR, "thresholds.json")
     if not os.path.exists(path):
         return {}
     with open(path, encoding="utf-8") as f:
-        return json.load(f)
+        data: dict[str, float] = json.load(f)
+        return data

@@ -9,7 +9,13 @@ Commented-out code is a genuine finding (rule C2) but not a prose one, so it is
 reported directly from the heuristic and never sent to the model, and it is
 tagged in `--json` so the provenance stays visible.
 """
+from __future__ import annotations
+
 import re
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .base import Comment
 
 MIN_LEN = 40  # excludes 2.9% of the training corpus and most `// TODO` noise
 
@@ -39,15 +45,15 @@ _CODE_SIGNS = (
 )
 
 
-def is_directive(text, raw):
+def is_directive(text: str, raw: str) -> bool:
     return bool(DIRECTIVE.match(raw.lstrip("/*# ")) or DIRECTIVE.match(text))
 
 
-def is_license(text):
+def is_license(text: str) -> bool:
     return bool(LICENSE.search(text[:400]))
 
 
-def looks_like_code(text):
+def looks_like_code(text: str) -> bool:
     """True when the comment is commented-out code rather than prose.
 
     Deliberately biased toward prose: every line has to look like code before
@@ -63,7 +69,7 @@ def looks_like_code(text):
     return _low_prose(text)
 
 
-def _low_prose(text):
+def _low_prose(text: str) -> bool:
     """Code is punctuation-dense and short on ordinary words."""
     words = re.findall(r"[A-Za-z]{2,}", text)
     if len(words) < 3:
@@ -72,7 +78,7 @@ def _low_prose(text):
     return punct / max(1, len(text)) > 0.04
 
 
-def classify(comment):
+def classify(comment: "Comment") -> str:
     """Return `prose`, `skip`, or `code` for one extracted comment."""
     text = comment.text
     if len(text) < MIN_LEN:

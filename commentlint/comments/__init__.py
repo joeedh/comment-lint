@@ -11,7 +11,7 @@ EXTENSIONS = TSJS_EXT | PY_EXT
 __all__ = ["Comment", "UnparseableSource", "EXTENSIONS", "language_of", "extract", "extract_file"]
 
 
-def language_of(path):
+def language_of(path: str) -> str | None:
     ext = os.path.splitext(path)[1].lower()
     if ext in TSJS_EXT:
         return "tsjs"
@@ -20,7 +20,7 @@ def language_of(path):
     return None
 
 
-def extract(path, src):
+def extract(path: str, src: str) -> list[Comment]:
     """Every comment in `src`. Raises UnparseableSource for broken Python."""
     lang = language_of(path)
     if lang == "tsjs":
@@ -34,6 +34,6 @@ def extract(path, src):
     return []
 
 
-def extract_file(path):
+def extract_file(path: str) -> list[Comment]:
     with open(path, encoding="utf-8-sig", errors="replace", newline="") as f:
         return extract(path, f.read())

@@ -11,10 +11,14 @@ model path does.
 """
 import json
 import os
+from typing import Union
 
 from . import ENCODER_DIR, LINEAR_DIR, RULES_PATH
 
 MAX_LEN = 96  # must match train.py
+
+# Per-comment score: (gate probability or None, one probability per rule label).
+Score = tuple[Union[float, None], list[float]]
 
 
 class LinearBackend:
@@ -23,7 +27,7 @@ class LinearBackend:
     name = "linear"
     has_gate = True
 
-    def __init__(self, model_dir=None):
+    def __init__(self, model_dir: str | None = None) -> None:
         from joblib import load
 
         self.dir = model_dir or LINEAR_DIR
@@ -32,7 +36,7 @@ class LinearBackend:
         with open(os.path.join(self.dir, "labels.json"), encoding="utf-8") as f:
             self.labels = json.load(f)
 
-    def score_batch(self, texts):
+    def score_batch(self, texts: list[str]) -> list[Score]:
         if not texts:
             return []
         X = self.vec.transform(texts)
@@ -43,7 +47,7 @@ class LinearBackend:
         ]
         return [(float(gates[i]), [float(c[i]) for c in cols]) for i in range(len(texts))]
 
-    def score(self, text):
+    def score(self, text: str) -> Score:
         return self.score_batch([text])[0]
 
 
@@ -53,7 +57,7 @@ class EncoderBackend:
     name = "encoder"
     has_gate = False  # set per instance: an older model dir ships rule heads only
 
-    def __init__(self, model_dir=None):
+    def __init__(self, model_dir: str | None = None) -> None:
         import torch
         from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
@@ -68,8 +72,8 @@ class EncoderBackend:
         # the gate; the shape is what says whether this model was trained with one
         self.has_gate = self.model.config.num_labels == len(self.labels) + 1
 
-    def score_batch(self, texts, chunk=64):
-        out = []
+    def score_batch(self, texts: list[str], chunk: int = 64) -> list[Score]:
+        out: list[Score] = []
         n = len(self.labels)
         for i in range(0, len(texts), chunk):
             batch = texts[i : i + chunk]
@@ -83,14 +87,20 @@ class EncoderBackend:
                 out.append((vals[n] if self.has_gate else None, vals[:n]))
         return out
 
-    def score(self, text):
+    def score(self, text: str) -> Score:
         return self.score_batch([text])[0]
 
 
-def load(prefer=None, model_dir=None):
+Backend = Union[LinearBackend, EncoderBackend]
+
+
+def load(
+    prefer: str | None = None, model_dir: str | None = None
+) -> tuple[Backend, dict[str, str], dict[str, float]]:
     """Return (backend, rule_desc, thresholds)."""
     linear_dir = model_dir or LINEAR_DIR
     has_linear = os.path.exists(os.path.join(linear_dir, "model.joblib"))
+    backend: Backend
     if prefer == "encoder" or (prefer is None and not has_linear):
         enc = model_dir or ENCODER_DIR
         if not os.path.exists(os.path.join(enc, "config.json")):
@@ -102,7 +112,7 @@ def load(prefer=None, model_dir=None):
     with open(RULES_PATH, encoding="utf-8") as f:
         rule_desc = {r["id"]: r["desc"] for r in json.load(f)["rules"]}
 
-    thresholds = {}
+    thresholds: dict[str, float] = {}
     path = os.path.join(backend.dir, "thresholds.json")
     if os.path.exists(path):
         with open(path, encoding="utf-8") as f:

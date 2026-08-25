@@ -7,12 +7,14 @@ threshold, and per-file config would make the single cache key impossible.
 That per-file resolution is also the only reason prettier needs `overrides`,
 so there is none of that either.
 """
+import argparse
 import json
 import os
+from typing import Any
 
 CONFIG_NAME = ".commentlintrc.json"
 
-KEYS = {
+KEYS: dict[str, type] = {
     "threshold": float,
     "limit": int,
     "minLength": int,
@@ -30,7 +32,7 @@ class ConfigError(Exception):
     """The config file exists but cannot be used."""
 
 
-def find(start=None):
+def find(start: str | None = None) -> str | None:
     """Path of the nearest config at or above `start`, or None."""
     d = os.path.abspath(start or os.getcwd())
     while True:
@@ -43,7 +45,7 @@ def find(start=None):
         d = parent
 
 
-def load(path):
+def load(path: str) -> dict[str, Any]:
     try:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
@@ -63,7 +65,9 @@ def load(path):
     return data
 
 
-def resolve(args, start=None):
+def resolve(
+    args: argparse.Namespace, start: str | None = None
+) -> tuple[dict[str, Any], str | None]:
     """Config values under the CLI, which wins -- prettier's `cli-override`."""
     if getattr(args, "no_config", False):
         return {}, None

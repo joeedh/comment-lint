@@ -19,6 +19,7 @@ that as the end of the literal confines the damage to the line that caused it
 instead of letting a stray quote swallow the rest of the file.
 """
 from bisect import bisect_right
+from typing import cast
 
 from .base import Comment
 from .normalize import normalize
@@ -32,8 +33,11 @@ REGEX_OK_WORDS = {
     "case", "do", "else", "yield", "await", "throw",
 }
 
+# (start offset, end offset, kind) for one scanned comment
+Span = tuple[int, int, str]
 
-def extract(path, src):
+
+def extract(path: str, src: str) -> list[Comment]:
     """Return every comment in `src`, in source order."""
     spans = scan(src)
     if not spans:
@@ -42,7 +46,7 @@ def extract(path, src):
     return _merge_runs([_to_comment(path, src, starts, s) for s in spans])
 
 
-def _merge_runs(comments):
+def _merge_runs(comments: list[Comment]) -> list[Comment]:
     """Fold a run of `//` lines into the one comment its author wrote.
 
     Left split, each line is scored as its own comment, and the model was
@@ -50,7 +54,7 @@ def _merge_runs(comments):
     author is reading it." arrives as a sentence fragment and gets a confident
     verdict on prose nobody wrote.
     """
-    out = []
+    out: list[Comment] = []
     for c in comments:
         prev = out[-1] if out else None
         # against the run's last line, not its first: a merged comment keeps
@@ -68,13 +72,13 @@ def _merge_runs(comments):
     return out
 
 
-def scan(src):
+def scan(src: str) -> list[Span]:
     """Return [(start, end, kind)] for every comment, positions as offsets."""
-    out = []
+    out: list[Span] = []
     n = len(src)
     i = 0
-    prev = None  # last significant token: a punctuation char, or "v" for a value
-    stack = []  # template/code frames above the outermost code frame
+    prev: str | None = None  # last significant token: a punctuation char, or "v" for a value
+    stack: list[int | str] = []  # template/code frames above the outermost code frame
     depth = 0  # brace depth within the current code frame
 
     while i < n:
@@ -141,7 +145,9 @@ def scan(src):
         elif c == "}":
             if depth == 0 and stack and stack[-1] == "code":
                 stack.pop()
-                depth = stack.pop()
+                # the frame below "code" is always the int depth pushed alongside
+                # it (see the push above); the mixed-type stack just can't say so
+                depth = cast(int, stack.pop())
                 prev, i = "v", i + 1
                 continue
             depth = max(0, depth - 1)
@@ -153,7 +159,7 @@ def scan(src):
     return out
 
 
-def _regex_allowed(prev):
+def _regex_allowed(prev: str | None) -> bool:
     if prev is None:
         return True
     if prev == "v":
@@ -163,7 +169,7 @@ def _regex_allowed(prev):
     return prev in REGEX_OK_CHARS
 
 
-def _skip_quoted(src, i, quote):
+def _skip_quoted(src: str, i: int, quote: str) -> int:
     """Index just past the closing quote, or at the newline that proves an error."""
     n = len(src)
     i += 1
@@ -180,7 +186,7 @@ def _skip_quoted(src, i, quote):
     return n
 
 
-def _skip_regex(src, i):
+def _skip_regex(src: str, i: int) -> int | None:
     """Index just past the closing `/` and flags, or None if this was division.
 
     A regex literal cannot span a line, so a newline means the `/` was division
@@ -209,7 +215,7 @@ def _skip_regex(src, i):
     return None
 
 
-def _line_starts(src):
+def _line_starts(src: str) -> list[int]:
     starts = [0]
     for i, c in enumerate(src):
         if c == "\n":
@@ -217,7 +223,7 @@ def _line_starts(src):
     return starts
 
 
-def _to_comment(path, src, starts, span):
+def _to_comment(path: str, src: str, starts: list[int], span: Span) -> Comment:
     start, end, kind = span
     li = bisect_right(starts, start) - 1
     col = start - starts[li] + 1

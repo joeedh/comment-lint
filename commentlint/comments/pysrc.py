@@ -11,6 +11,7 @@ person who wrote them, and the model was trained on multi-line prose.
 import ast
 import io
 import tokenize
+from tokenize import TokenInfo
 
 from .base import Comment
 from .normalize import normalize
@@ -22,14 +23,14 @@ class UnparseableSource(Exception):
     """The file is not valid Python; the caller should skip and report it."""
 
 
-def extract(path, src):
+def extract(path: str, src: str) -> list[Comment]:
     """Return every comment and docstring in `src`, in source order."""
     out = _hash_comments(path, src) + _docstrings(path, src)
     out.sort(key=lambda c: (c.line, c.col))
     return out
 
 
-def _hash_comments(path, src):
+def _hash_comments(path: str, src: str) -> list[Comment]:
     lines = src.splitlines()
     try:
         toks = [
@@ -39,10 +40,10 @@ def _hash_comments(path, src):
     except (tokenize.TokenError, SyntaxError, IndentationError) as e:
         raise UnparseableSource(str(e)) from e
 
-    out = []
-    run = []  # consecutive standalone `#` lines, merged on flush
+    out: list[Comment] = []
+    run: list[TokenInfo] = []  # consecutive standalone `#` lines, merged on flush
 
-    def flush():
+    def flush() -> None:
         if not run:
             return
         first = run[0]
@@ -68,13 +69,13 @@ def _hash_comments(path, src):
     return out
 
 
-def _docstrings(path, src):
+def _docstrings(path: str, src: str) -> list[Comment]:
     try:
         tree = ast.parse(src)
     except (SyntaxError, ValueError) as e:
         raise UnparseableSource(str(e)) from e
 
-    out = []
+    out: list[Comment] = []
     for node in ast.walk(tree):
         if not isinstance(node, DOC_NODES):
             continue

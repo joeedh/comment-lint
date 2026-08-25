@@ -26,8 +26,10 @@ the labels/thresholds/coverage files predict.py reads.
 import json
 import os
 import sys
+from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 from joblib import dump
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
@@ -42,7 +44,7 @@ C = float(os.environ.get("CL_C", "1.0"))
 realistic_mask, calibrate_gate = T.realistic_mask, T.calibrate_gate
 
 
-def build_vectorizer():
+def build_vectorizer() -> FeatureUnion:
     return FeatureUnion(
         [
             ("word", TfidfVectorizer(ngram_range=(1, 2), min_df=2, sublinear_tf=True)),
@@ -51,9 +53,11 @@ def build_vectorizer():
     )
 
 
-def fit_heads(X, Y, label_ids):
+def fit_heads(
+    X: Any, Y: npt.NDArray[np.float64], label_ids: list[str]
+) -> list[LogisticRegression | None]:
     """One balanced one-vs-rest head per rule; a rule with no positives gets None."""
-    heads = []
+    heads: list[LogisticRegression | None] = []
     for i, r in enumerate(label_ids):
         if Y[:, i].sum() < 2:
             print(f"  {r}: too few train positives, head skipped", file=sys.stderr)
@@ -63,7 +67,7 @@ def fit_heads(X, Y, label_ids):
     return heads
 
 
-def probs_for(heads, X):
+def probs_for(heads: list[LogisticRegression | None], X: Any) -> npt.NDArray[np.float64]:
     out = np.zeros((X.shape[0], len(heads)))
     for i, h in enumerate(heads):
         if h is not None:
@@ -71,7 +75,7 @@ def probs_for(heads, X):
     return out
 
 
-def main():
+def main() -> None:
     all_rule_ids = T.load_rules()
     pairs = T.load_pairs()
     label_ids, dropped, _ = T.select_labels(all_rule_ids, pairs)

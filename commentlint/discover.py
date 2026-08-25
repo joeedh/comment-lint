@@ -17,6 +17,8 @@ queried path that itself ends in a slash. `spec('build/').match_file('build')`
 is False. Every directory tested here is passed with its trailing slash.
 """
 import os
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from typing import Any
 
 import pathspec
 
@@ -26,21 +28,27 @@ IGNORE_FILES = (".gitignore", ".commentlintignore")
 VCS_DIRS = {".git", ".hg", ".svn", ".jj", ".sl", "__pycache__"}
 GLOB_CHARS = set("*?[")
 
+# pathspec ships no type stubs (see mypy.ini), so its spec objects are Any here.
+Spec = Any
+Layer = tuple[str, Spec]
+PatternSpec = tuple[str, Spec]
+OnSkip = Callable[[str, str], None]
 
-def _spec(lines):
+
+def _spec(lines: Iterable[str]) -> Spec:
     return pathspec.GitIgnoreSpec.from_lines(lines)
 
 
 class Ignores:
     """A stack of gitignore specs, innermost first when deciding."""
 
-    def __init__(self, layers=()):
-        self.layers = list(layers)  # [(base_dir, spec)]
+    def __init__(self, layers: Iterable[Layer] = ()) -> None:
+        self.layers: list[Layer] = list(layers)  # [(base_dir, spec)]
 
-    def pushed(self, base, spec):
+    def pushed(self, base: str, spec: Spec) -> "Ignores":
         return Ignores(self.layers + [(base, spec)])
 
-    def ignored(self, path, is_dir):
+    def ignored(self, path: str, is_dir: bool) -> bool:
         for base, spec in reversed(self.layers):
             rel = os.path.relpath(path, base).replace("\\", "/")
             if rel.startswith(".."):
@@ -49,11 +57,11 @@ class Ignores:
                 rel += "/"
             result = spec.check_file(rel)
             if result.include is not None:
-                return result.include
+                return bool(result.include)
         return False
 
 
-def load_ignore_files(directory, names=IGNORE_FILES):
+def load_ignore_files(directory: str, names: Sequence[str] = IGNORE_FILES) -> Spec | None:
     """One spec for `directory`, or None when it holds no ignore file.
 
     The files are concatenated rather than layered because they sit at the same
@@ -68,7 +76,13 @@ def load_ignore_files(directory, names=IGNORE_FILES):
     return _spec(lines) if lines else None
 
 
-def walk(root, ignores, with_node_modules=False, pattern=None, on_skip=None):
+def walk(
+    root: str,
+    ignores: Ignores,
+    with_node_modules: bool = False,
+    pattern: PatternSpec | None = None,
+    on_skip: OnSkip | None = None,
+) -> Iterator[str]:
     """Yield scannable files under `root`, pruning ignored directories."""
     spec = load_ignore_files(root)
     if spec is not None:
@@ -107,16 +121,16 @@ def walk(root, ignores, with_node_modules=False, pattern=None, on_skip=None):
         yield entry.path
 
 
-def _matches(pattern_spec, path):
+def _matches(pattern_spec: PatternSpec, path: str) -> bool:
     base, spec = pattern_spec
     rel = os.path.relpath(path, base).replace("\\", "/")
-    return spec.match_file(rel)
+    return bool(spec.match_file(rel))
 
 
-def split_glob(arg):
+def split_glob(arg: str) -> tuple[str, str | None]:
     """Split a glob into its fixed base directory and the pattern beneath it."""
     parts = arg.replace("\\", "/").split("/")
-    fixed = []
+    fixed: list[str] = []
     for i, part in enumerate(parts):
         if GLOB_CHARS & set(part):
             return "/".join(fixed) or ".", "/".join(parts[i:])
@@ -124,9 +138,15 @@ def split_glob(arg):
     return arg, None
 
 
-def discover(paths, exclude=(), ignore_path=(), with_node_modules=False, on_skip=None):
+def discover(
+    paths: Sequence[str],
+    exclude: Sequence[str] = (),
+    ignore_path: Sequence[str] = (),
+    with_node_modules: bool = False,
+    on_skip: OnSkip | None = None,
+) -> list[str]:
     """Every file to scan, de-duplicated and in stable order."""
-    base_layers = []
+    base_layers: list[Layer] = []
     for p in ignore_path:
         if os.path.isfile(p):
             with open(p, encoding="utf-8", errors="replace") as f:
@@ -137,15 +157,16 @@ def discover(paths, exclude=(), ignore_path=(), with_node_modules=False, on_skip
     # `--exclude vendor/` silently excludes nothing when the root is elsewhere
     exclude_spec = _spec(exclude) if exclude else None
 
-    out, seen = [], set()
+    out: list[str] = []
+    seen: set[str] = set()
 
-    def add(path):
+    def add(path: str) -> None:
         key = os.path.normcase(os.path.abspath(path))
         if key not in seen:
             seen.add(key)
             out.append(path)
 
-    def rooted(root):
+    def rooted(root: str) -> Ignores:
         if exclude_spec is None:
             return ignores
         return ignores.pushed(os.path.abspath(root), exclude_spec)
@@ -158,13 +179,13 @@ def discover(paths, exclude=(), ignore_path=(), with_node_modules=False, on_skip
                 continue
             if not os.path.isdir(arg):
                 raise FileNotFoundError(arg)
-            for f in walk(arg, rooted(arg), with_node_modules, None, on_skip):
-                add(f)
+            for found_path in walk(arg, rooted(arg), with_node_modules, None, on_skip):
+                add(found_path)
             continue
         if not os.path.isdir(base):
             continue
         pat = (os.path.abspath(base), _spec([pattern]))
-        for f in walk(base, rooted(base), with_node_modules, pat, on_skip):
-            add(f)
+        for found_path in walk(base, rooted(base), with_node_modules, pat, on_skip):
+            add(found_path)
 
     return out

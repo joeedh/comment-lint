@@ -23,7 +23,7 @@ TAG_LINE = re.compile(r"^\s*@\w")
 CONT_STAR = re.compile(r"^\s*\*(?!/)\s?")
 
 
-def strip_markers(raw, kind):
+def strip_markers(raw: str, kind: str) -> str:
     """Remove the comment delimiters, leaving the prose and its line breaks."""
     text = raw.replace("\r\n", "\n").replace("\r", "\n")
 
@@ -52,7 +52,7 @@ def strip_markers(raw, kind):
     return text
 
 
-def truncate_at_tags(text):
+def truncate_at_tags(text: str) -> str:
     """Drop everything from the first line-initial @tag on.
 
     Not one of the 11,480 training texts contains one, so a @param block is
@@ -65,7 +65,7 @@ def truncate_at_tags(text):
     return text
 
 
-def normalize(raw, kind="block"):
+def normalize(raw: str, kind: str = "block") -> str:
     """Raw comment (delimiters included) to trained text shape."""
     text = strip_markers(raw, kind)
     lines = text.split("\n")

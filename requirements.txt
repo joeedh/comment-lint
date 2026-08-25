@@ -9,3 +9,6 @@ torch>=2.2
 
 # tests
 pytest>=8.0
+
+# type checking
+mypy>=1.10
