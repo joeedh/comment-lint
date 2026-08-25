@@ -5,6 +5,7 @@ import pytest
 
 from commentlint import ENCODER_DIR, LINEAR_DIR
 from commentlint import config as config_mod
+from commentlint import rules as rules_mod
 from commentlint.cli import EXIT_CLEAN, EXIT_FINDINGS, EXIT_USAGE, build_parser, looks_like_path, main
 
 BAD = "// The leak scan is the refusal, and the refusal is what the caller reads back.\n"
@@ -68,14 +69,47 @@ class TestConfig:
         _, out = run(["."], capsys)
         assert "cut 0.42" in out
 
-    def test_no_config_ignores_the_file(self, project, capsys):
+    def test_no_config_falls_back_to_the_models_own_cut(self, project, capsys):
         (project / ".commentlintrc.json").write_text('{"threshold": 0.42}', encoding="utf-8")
         _, out = run([".", "--no-config"], capsys)
-        assert "cut 0.70" in out
+        assert f"cut {rules_mod.scan_threshold(LINEAR_DIR):.2f}" in out
 
     def test_bad_config_exits_two(self, project, capsys):
         (project / ".commentlintrc.json").write_text("{oops", encoding="utf-8")
         assert main([".", "--no-cache"]) == EXIT_USAGE
+
+
+class TestScanThreshold:
+    """The scan cut travels with the model, because it is a per-model quantity.
+
+    At one false-alarm budget the linear gate cuts at 0.71 and the encoder gate at
+    0.99; a constant shared between them flagged 2.5% of one tree and 9.1% of the
+    same tree.
+    """
+
+    def test_the_shipped_model_carries_a_cut(self):
+        assert rules_mod.SCAN_KEY in rules_mod.thresholds(LINEAR_DIR)
+
+    def test_a_model_without_the_key_falls_back(self, tmp_path):
+        (tmp_path / "thresholds.json").write_text('{"__gate__": 0.5}', encoding="utf-8")
+        assert rules_mod.scan_threshold(str(tmp_path)) == rules_mod.SCAN_THRESHOLD
+
+    def test_a_missing_thresholds_file_falls_back(self, tmp_path):
+        assert rules_mod.scan_threshold(str(tmp_path)) == rules_mod.SCAN_THRESHOLD
+
+    def test_the_scan_reads_the_cut_from_the_model_directory(self, tmp_path, capsys):
+        model = tmp_path / "m"
+        model.mkdir()
+        (model / "thresholds.json").write_text('{"__scan__": 0.33}', encoding="utf-8")
+        empty = tmp_path / "src"
+        empty.mkdir()
+        # nothing to score, so the cut is resolved without loading a model at all
+        main([str(empty), "--no-cache", "--model", str(model)])
+        assert "cut 0.33" in capsys.readouterr().out
+
+    def test_the_cli_still_overrides_the_models_cut(self, project, capsys):
+        _, out = run([".", "--threshold", "0.55"], capsys)
+        assert "cut 0.55" in out
 
 
 class TestArgumentDisambiguation:

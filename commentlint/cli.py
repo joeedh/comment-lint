@@ -40,7 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("paths", nargs="*", help="files, directories or globs to scan")
     p.add_argument("--text", help="score this literal comment text instead of scanning")
     p.add_argument("--file", help="score the whole contents of this file as one comment")
-    p.add_argument("--threshold", type=float, help="gate cut (default 0.70 scanning, 0.50 single)")
+    p.add_argument("--threshold", type=float, help="gate cut (default: the model's own calibrated cut)")
     p.add_argument("--limit", type=int, help=f"most findings to print (default {DEFAULT_LIMIT})")
     p.add_argument("--min-length", type=int, help=f"skip comments shorter than this (default {filters.MIN_LEN})")
     p.add_argument("--exclude", action="append", default=[], metavar="PATTERN",
@@ -145,7 +145,9 @@ def run_single(text: str, args: argparse.Namespace, opts: Options) -> int:
 
     backend, rule_desc, thresholds = load(opts.backend, opts.model)
     gate, probs = backend.score(text)
-    cut = opts.threshold if opts.threshold is not None else thresholds.get("__gate__", rules_mod.SINGLE_THRESHOLD)
+    cut: float = opts.threshold
+    if opts.threshold is None:
+        cut = thresholds.get(rules_mod.GATE_KEY, rules_mod.SINGLE_THRESHOLD)
 
     order = sorted(range(len(probs)), key=lambda i: -probs[i])
     ranked = [(backend.labels[i], probs[i]) for i in (order if args.all else order[: args.top])]
@@ -181,6 +183,9 @@ def run_coverage(args: argparse.Namespace, opts: Options) -> int:
     if "gate" in cov:
         g, a = cov["gate"], cov.get("attribution", {})
         print(f"GATE: cut {g['cut']:.2f}, AUC {g['auc']:.3f} on held-out text")
+        if "scan_cut" in g:
+            print(f"SCAN: cut {g['scan_cut']:.2f}, budgeted at {g['scan_max_fpr']:.0%} "
+                  f"of clean comments flagged")
         if a:
             print("ATTRIBUTION: a true rule is " + ", ".join(
                 f"top-{k[3:]} {v:.0%}" for k, v in sorted(a.items())) + "\n")
@@ -207,7 +212,11 @@ def run_scan(args: argparse.Namespace, opts: Options) -> int:
         print(f"commentlint: no such file or directory: {e}", file=sys.stderr)
         return EXIT_USAGE
 
-    cut = opts.threshold if opts.threshold is not None else rules_mod.SCAN_THRESHOLD
+    # read from thresholds.json, not from the backend, so the cached path can
+    # resolve the cut without pulling sklearn into the import graph
+    cut: float = opts.threshold
+    if opts.threshold is None:
+        cut = rules_mod.scan_threshold(opts.fingerprint_dir)
     cache = cache_mod.Cache(
         args.cache_location or cache_mod.default_location(),
         cache_mod.run_key(opts.fingerprint_dir, {

@@ -49,6 +49,8 @@ POS_WEIGHT_CAP = 20.0  # raw neg/pos reaches ~400 for the rarest rules and desta
 MIN_PRECISION = 0.5  # a rule that cannot flag this cleanly is switched off rather than shipped noisy
 GATE_MIN_PRECISION = 0.75  # a comment wrongly called bad costs a rewrite of good prose
 GATE_LABEL = "__gate__"  # the extra head column, and its key in thresholds.json
+SCAN_MAX_FPR = 0.03  # false alarms a whole-repo scan may spend, as a share of clean comments
+SCAN_LABEL = "__scan__"  # the scan cut's key in thresholds.json
 SEED = 0
 
 
@@ -265,6 +267,29 @@ def calibrate_gate(
     return best[1]
 
 
+def scan_cut(
+    probs: npt.NDArray[np.float64], y: npt.NDArray[np.float64], max_fpr: float = SCAN_MAX_FPR
+) -> float:
+    """The cut a whole-repo scan uses: a false-alarm budget, not a precision floor.
+
+    Precision moves with the base rate, and the base rate is exactly what changes
+    between a 53%-bad evaluation set and a repo where nearly every comment is
+    fine -- the calibrated gate cut flags 17% of a real tree. The false-positive
+    rate does not move, so the scan cut is set by how many clean comments the run
+    is allowed to flag, and the answer is the score that only `max_fpr` of the
+    held-out negatives beat.
+
+    This is a per-model quantity. Two gates can rank identically and still put
+    that score in different places, so the number belongs in thresholds.json
+    beside the model that produced it rather than in a shared constant.
+    """
+    neg = probs[y == 0]
+    if len(neg) == 0:
+        print("scan: no negatives to budget against; falling back to 0.95", file=sys.stderr)
+        return 0.95
+    return float(np.quantile(neg, 1 - max_fpr))
+
+
 def calibrate(
     probs: npt.NDArray[np.float64],
     Y: npt.NDArray[np.float64],
@@ -406,6 +431,8 @@ def main() -> None:
     mca = realistic_mask(calib_kind, bca)
     gate_cut = calibrate_gate(calib_probs[mca, gi], bca[mca])
     thresholds[GATE_LABEL] = gate_cut
+    scan_c = scan_cut(calib_probs[mca, gi], bca[mca])
+    thresholds[SCAN_LABEL] = scan_c
 
     test_probs, test_Y = predict_probs(model, ds_test)
     thr = np.array([thresholds[l] for l in label_ids])
@@ -422,6 +449,9 @@ def main() -> None:
         f"  precision {precision_score(bte[mte], gp, zero_division=0):.2f}   "
         f"recall {recall_score(bte[mte], gp, zero_division=0):.2f}"
     )
+    neg_t, pos_t = g[bte[mte] == 0], g[bte[mte] == 1]
+    print(f"  scan cut {scan_c:.2f} (budget {SCAN_MAX_FPR:.0%} of clean comments): "
+          f"flags {(neg_t > scan_c).mean():.1%} of held-out clean, {(pos_t > scan_c).mean():.1%} of bad")
 
     pos = np.where(bte == 1)[0]
     P = test_probs[:, : len(label_ids)]
@@ -454,7 +484,8 @@ def main() -> None:
             {
                 "trained": label_ids,
                 "untrained": {r: c for r, c in dropped},
-                "gate": {"cut": gate_cut, "auc": gate_auc},
+                "gate": {"cut": gate_cut, "auc": gate_auc,
+                         "scan_cut": scan_c, "scan_max_fpr": SCAN_MAX_FPR},
                 "attribution": {f"top{k}": v for k, v in topk.items()},
             },
             f,

@@ -43,7 +43,7 @@ Not scored:
 packages/authoring/src/loop.ts
    398:1   P4   0.85  Both shapes are accepted: one question is the common case...
 
-653 files, 7374 comments, 182 findings (cut 0.70, 0 cached, 7.3s)
+653 files, 7374 comments, 182 findings (cut 0.71, 0 cached, 7.3s)
 ```
 
 Findings are ranked worst-first and cut off at `--limit` (default 50); whatever is hidden
@@ -53,10 +53,19 @@ The score is the gate: how likely the comment breaks *some* rule. The rule besid
 the best of 16 ranked suspects, right about 64% of the time and in the top three 87% of
 the time — a suspicion to check, not a detection. `--top N` names more of them.
 
-The default cut is 0.70 rather than the model's calibrated 0.50. Calibration was fit on a
-53%-bad evaluation set; a real repository's rate is far lower, so 0.50 flags about 17% of
-all comments. The ranking is good at the top and weak in the middle, which is why the
-default is a ranked list under a stricter cut. Lower it with `--threshold` to dig.
+Scanning uses a stricter cut than the single-comment path, and reads it from the model's
+own `thresholds.json` under the key `__scan__`. The single-comment cut is calibrated for
+precision on a 53%-bad evaluation set; a real repository's rate is far lower, so that cut
+flags about 17% of every comment in a tree. Precision moves with the base rate and the
+base rate is what changed, so the scan cut is set by a false-alarm budget instead: the
+score that only 3% of held-out clean comments beat. Lower it with `--threshold` to dig.
+
+The cut belongs to the model rather than to the tool because two gates can rank equally
+well and still put that score in different places. The linear gate spends its 3% at 0.71
+and the encoder gate at 0.99. Read on one shared constant of 0.70 they look wildly
+different — 2.5% of one tree against 9.1% of the same tree — and read on their own cuts
+they agree, at 1.4% and 2.0%. A model whose `thresholds.json` predates the key falls back
+to 0.70, which is the linear model's number and correct for nothing else.
 
 `--json` gives every finding with its position, ranked rules, text and `source`
 (`model` or `heuristic`). `--quiet` prints the summary alone.
@@ -78,9 +87,11 @@ overrides it. One config per run — there are no per-file `overrides`.
 Keys: `threshold` `limit` `minLength` `exclude` `ignorePath` `withNodeModules` `cache`
 `cacheStrategy` `backend` `model`. An unknown key is an error, not a shrug.
 
-`backend` is `linear` or `encoder`. Only the linear model has a gate head, so only it can
-scan; the encoder ranks rules for one comment (`--text`) and refuses a scan rather than
-reporting every file clean.
+`backend` is `linear` or `encoder`. Scanning cuts on the gate, so a model without a gate
+head refuses a scan rather than reporting every file clean; it still ranks rules for one
+comment under `--text`. The encoder in `model/` has no gate and behaves that way. Whether
+a model has one is read from its output shape, not from a flag: `labels.json` names the
+rule heads only, so one spare output column is the gate.
 
 ## Cache
 

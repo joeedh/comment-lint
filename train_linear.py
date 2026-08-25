@@ -41,7 +41,7 @@ import train as T
 OUT_DIR = os.environ.get("CL_OUT", "model_linear")
 C = float(os.environ.get("CL_C", "1.0"))
 # the gate's masking and cut policy live in train.py so both models share one
-realistic_mask, calibrate_gate = T.realistic_mask, T.calibrate_gate
+realistic_mask, calibrate_gate, scan_cut = T.realistic_mask, T.calibrate_gate, T.scan_cut
 
 
 def build_vectorizer() -> FeatureUnion:
@@ -97,7 +97,9 @@ def main() -> None:
 
     gate = LogisticRegression(max_iter=3000, C=C, class_weight="balanced").fit(Xtr, btr)
     mca, mte = realistic_mask(ds_calib["kind"], bca), realistic_mask(ds_test["kind"], bte)
-    gate_cut = calibrate_gate(gate.predict_proba(Xca)[:, 1][mca], bca[mca])
+    gca = gate.predict_proba(Xca)[:, 1][mca]
+    gate_cut = calibrate_gate(gca, bca[mca])
+    scan_c = scan_cut(gca, bca[mca])
 
     g = gate.predict_proba(Xte)[:, 1][mte]
     gp = (g > gate_cut).astype(int)
@@ -107,6 +109,9 @@ def main() -> None:
         f"  precision {precision_score(bte[mte], gp, zero_division=0):.2f}   "
         f"recall {recall_score(bte[mte], gp, zero_division=0):.2f}"
     )
+    neg_t, pos_t = g[bte[mte] == 0], g[bte[mte] == 1]
+    print(f"  scan cut {scan_c:.2f} (budget {T.SCAN_MAX_FPR:.0%} of clean comments): "
+          f"flags {(neg_t > scan_c).mean():.1%} of held-out clean, {(pos_t > scan_c).mean():.1%} of bad")
 
     heads = fit_heads(Xtr, Ytr, label_ids)
     P = probs_for(heads, Xte)
@@ -129,13 +134,14 @@ def main() -> None:
     with open(f"{OUT_DIR}/labels.json", "w", encoding="utf-8") as f:
         json.dump(label_ids, f)
     with open(f"{OUT_DIR}/thresholds.json", "w", encoding="utf-8") as f:
-        json.dump({"__gate__": gate_cut}, f, indent=1)
+        json.dump({T.GATE_LABEL: gate_cut, T.SCAN_LABEL: scan_c}, f, indent=1)
     with open(f"{OUT_DIR}/coverage.json", "w", encoding="utf-8") as f:
         json.dump(
             {
                 "trained": label_ids,
                 "untrained": {r: n for r, n in dropped},
-                "gate": {"cut": gate_cut, "auc": float(roc_auc_score(bte[mte], g))},
+                "gate": {"cut": gate_cut, "auc": float(roc_auc_score(bte[mte], g)),
+                         "scan_cut": scan_c, "scan_max_fpr": T.SCAN_MAX_FPR},
                 "attribution": {f"top{k}": v for k, v in topk.items()},
             },
             f,

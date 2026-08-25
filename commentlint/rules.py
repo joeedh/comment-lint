@@ -8,11 +8,20 @@ import os
 
 from . import LINEAR_DIR, RULES_PATH
 
-# the calibrated cut is fit on a 53%-bad evaluation set; a real repo's base rate
-# is far lower, so scanning uses a stricter one -- 1038 findings vs 149 over the
-# same 6000 comments -- and ranks by score instead of dumping everything over it
+GATE_KEY = "__gate__"
+SCAN_KEY = "__scan__"
+
+# Fallbacks for a model trained before its thresholds.json carried a cut. Both
+# describe the linear model and neither transfers: a saturated gate puts the same
+# false-alarm rate at a different score, so a shared 0.70 flagged 2.5% of one real
+# tree and 9.1% of the same tree under the encoder. Prefer scan_threshold().
 SCAN_THRESHOLD = 0.70
 SINGLE_THRESHOLD = 0.50
+
+
+def scan_threshold(model_dir: str | None = None) -> float:
+    """The scan cut the model was calibrated with, read without loading it."""
+    return thresholds(model_dir).get(SCAN_KEY, SCAN_THRESHOLD)
 
 
 def descriptions() -> dict[str, str]:
