@@ -1,5 +1,7 @@
 model/checkpoints/
+model_*/
 train.log
 train_run.log
 __pycache__/
 *.pyc
+train_v2.log
