@@ -20,6 +20,9 @@
 * Prefer `python task.py typecheck` over calling mypy directly. mypy.ini excludes tests/
   and data/, so naming either on the command line checks nothing while looking like it
   did; task.py carries the file list that is actually correct.
+* `bin/` holds the launchers an installed user runs: `commentlint` for sh and
+  `commentlint.cmd` for cmd and PowerShell. Both are thin wrappers around predict.py, so
+  a change to the CLI needs nothing done to them.
 
 ## Invariants
 * `cli.py` must not import `backends.py` at module scope. Importing scikit-learn costs
@@ -32,6 +35,16 @@
   against the corpus, so change it only with that test's verdict in hand.
 * Model directories are gitignored apart from `model/` and `model_linear/`, which keeps a
   new experiment out of the repository until someone decides to add it.
+* The launchers stay in `bin/` and are never moved to the repository root, because the root
+  already holds the `commentlint/` package directory and Windows refuses a file that shares
+  a name with a sibling directory.
+* The launchers forward predict.py's exit code unchanged, so 1 keeps meaning findings and 2
+  a bad argument. In `commentlint.cmd` the forwarding lines sit outside any parenthesized
+  block: cmd expands `%ERRORLEVEL%` when it parses a block, so an `exit /b %ERRORLEVEL%`
+  written inside one reports the value from before the run.
+* `.gitattributes` pins `bin/commentlint` to LF and `bin/commentlint.cmd` to CRLF, and the
+  sh launcher is committed executable. A CR on the shebang line leaves the script unrunnable
+  on any POSIX shell.
 
 ## Comments 
 * Temporary non-doc comments must start with CLAUDENODE: for later stripping.

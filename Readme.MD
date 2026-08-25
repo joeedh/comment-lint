@@ -1,8 +1,30 @@
 # Comment Lint
 
+## The commentlint command
+
+`bin/` holds two launchers that run the linter without naming an interpreter. `commentlint`
+is the sh script and `commentlint.cmd` is its counterpart for cmd and PowerShell. Put that
+one directory on PATH and each shell picks up the launcher it can run.
+
+```
+export PATH="$PATH:/path/to/commentlint/bin"        # bash
+$env:PATH += ';C:\path\to\commentlint\bin'          # PowerShell, this session only
+```
+
+```
+commentlint src/            lint a tree
+commentlint "some comment"  score one comment
+commentlint --coverage      which rules the model can name
+```
+
+Arguments and exit codes pass straight through to predict.py, so 1 still means findings and
+2 a bad argument. A `.venv` inside the checkout is used without being activated. Otherwise
+the launchers take the first python they find on PATH, and exit 127 if there is none.
+
 ## Tasks
 
-`task.py` is the dispatch point. `python task.py` on its own lists what is available.
+`task.py` is the dispatch point for working on the repository itself. `python task.py` on
+its own lists what is available.
 
 ```
 python task.py install     dependencies, training and type-checking extras included

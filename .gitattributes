@@ -3,3 +3,8 @@ model/**/*.bin filter=lfs diff=lfs merge=lfs -text
 model/**/*.pt filter=lfs diff=lfs merge=lfs -text
 model/**/*.pth filter=lfs diff=lfs merge=lfs -text
 model_linear/*.joblib filter=lfs diff=lfs merge=lfs -text
+
+# The shell launcher needs LF line endings or the shebang carries a stray CR
+# and no POSIX shell will run it. Its cmd counterpart wants CRLF.
+bin/commentlint text eol=lf
+bin/commentlint.cmd text eol=crlf

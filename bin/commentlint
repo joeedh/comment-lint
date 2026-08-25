@@ -1,0 +1,27 @@
+#!/bin/sh
+# Run the linter without naming an interpreter. Put this directory on PATH.
+#
+# The launcher lives in bin/ rather than the repository root because the root
+# already holds a directory named commentlint/, and on Windows a file cannot
+# share a name with a sibling directory.
+set -e
+
+here=$(cd -- "$(dirname -- "$0")" && pwd)
+root=$(dirname -- "$here")
+
+# A virtualenv inside the checkout is used without being activated, matching
+# task.py's use of sys.executable. Otherwise whatever python is on PATH.
+if [ -x "$root/.venv/bin/python" ]; then
+  python="$root/.venv/bin/python"
+elif [ -x "$root/.venv/Scripts/python.exe" ]; then
+  python="$root/.venv/Scripts/python.exe"
+elif command -v python3 >/dev/null 2>&1; then
+  python=python3
+elif command -v python >/dev/null 2>&1; then
+  python=python
+else
+  echo "commentlint: no python found on PATH" >&2
+  exit 127
+fi
+
+exec "$python" "$root/predict.py" "$@"
