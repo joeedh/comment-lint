@@ -1,5 +1,6 @@
 model/checkpoints/
 model_*/
+!model_linear/
 train.log
 train_run.log
 __pycache__/

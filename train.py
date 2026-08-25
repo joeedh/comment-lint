@@ -114,10 +114,12 @@ def load_examples(label_ids, pairs):
         eval_ok = row.get("agreement", "full") != "conflict" and sum(agreed) > 0
         n_conflict += not eval_ok
         examples.append(
-            {"text": row["before"], "labels": union, "labels_eval": agreed, "eval_ok": eval_ok}
+            {"text": row["before"], "labels": union, "labels_eval": agreed,
+             "eval_ok": eval_ok, "kind": "before"}
         )
         examples.append(
-            {"text": row["after"], "labels": list(zeros), "labels_eval": list(zeros), "eval_ok": True}
+            {"text": row["after"], "labels": list(zeros), "labels_eval": list(zeros),
+             "eval_ok": True, "kind": "after"}
         )
         n_pos += 1
         n_gold_neg += 1
@@ -130,7 +132,8 @@ def load_examples(label_ids, pairs):
         clean_rows = [clean_rows[i] for i in idx]
     for row in clean_rows:
         examples.append(
-            {"text": row["comment"], "labels": list(zeros), "labels_eval": list(zeros), "eval_ok": True}
+            {"text": row["comment"], "labels": list(zeros), "labels_eval": list(zeros),
+             "eval_ok": True, "kind": "clean"}
         )
 
     print(
@@ -157,7 +160,10 @@ def three_way_split(examples, seed=SEED):
     train = [pool[i] for i in order[n_held:]] + train_only
 
     def strip(rows, use_eval):
-        return [{"text": r["text"], "labels": r["labels_eval" if use_eval else "labels"]} for r in rows]
+        return [
+            {"text": r["text"], "labels": r["labels_eval" if use_eval else "labels"], "kind": r["kind"]}
+            for r in rows
+        ]
 
     half = len(held) // 2
     return (
