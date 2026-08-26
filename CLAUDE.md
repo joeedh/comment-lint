@@ -6,6 +6,11 @@
   - When a plan is completed it should be pressure tested with an agent, and the 
     results folded back in.
 
+## ToDos
+- todos.md stores todos
+- is a markdown checkbox list
+- check off items when they complete
+
 ## Orientation
 * docs/architecture.md describes how the tool is put together and why. Read it before
   moving anything across a module boundary.
