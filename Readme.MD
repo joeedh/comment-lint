@@ -62,7 +62,8 @@ option, with the same names the CLI flags use underneath their dashes:
   "backend": "linear",
   "model": "./model_linear",
   "markdown": false,
-  "markdownFiles": ["CLAUDE.md"]
+  "markdownFiles": ["CLAUDE.md"],
+  "disableRules": ["C10", "P9"]
 }
 ```
 
@@ -71,6 +72,14 @@ typo in the config surfaces immediately instead of silently falling back to a de
 flag always wins over the matching config key, and `--config` points at a specific file when
 the nearest one found by upward search is not the one to use. `--no-config` skips the search
 entirely, scanning under CLI flags and built-in defaults alone.
+
+`disableRules` (or `--disable-rule RULE`, repeatable) is a list of rule ids -- `C10`, `P9`,
+and so on -- that never get reported. An unknown id fails the run the same way an unknown
+config key does. Disabling a rule only changes which rule a finding is named after: the gate
+that decides whether a comment is flagged at all is a single score across every rule and is
+not affected, so a comment that would only have been named for a disabled rule is now
+reported clean rather than under a different rule. `C2` (commented-out code) is a heuristic
+outside the model and can be disabled the same way.
 
 ### Markdown
 

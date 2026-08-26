@@ -36,6 +36,10 @@ def all_rules() -> list[dict[str, str]]:
         return rules
 
 
+def known_ids() -> set[str]:
+    return {r["id"] for r in all_rules()}
+
+
 def thresholds(model_dir: str | None = None) -> dict[str, float]:
     path = os.path.join(model_dir or LINEAR_DIR, "thresholds.json")
     if not os.path.exists(path):

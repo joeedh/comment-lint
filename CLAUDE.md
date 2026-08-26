@@ -65,6 +65,8 @@
 These rules govern every piece of prose in the repository. They apply to code comments, to
 this file, and to everything under `docs/`.
 
+<!-- commentlint-off -->
+
 - **Write plain declarative prose — no epigrams.** State the constraint or decision
   directly: "An empty answer is deliberate and is passed to the model as-is", not "Empty is an
   answer — silence, said out loud." If a sentence needs a second read to parse, rewrite it.
@@ -119,3 +121,4 @@ this file, and to everything under `docs/`.
   it unclear whether the second comma closes an interpolation or opens a new clause. Write
   "Dropping onto itself (or onto a neighbor it would split against) is not a rip". Drop any comma
   that would follow the closing bracket — it separates the subject from its verb.
+<!-- commentlint-on -->

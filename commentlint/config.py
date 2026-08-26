@@ -12,6 +12,8 @@ import json
 import os
 from typing import Any
 
+from . import rules as rules_mod
+
 CONFIG_NAME = ".commentlintrc.json"
 LOCAL_CONFIG_NAME = ".commentlintrc.local.json"
 
@@ -29,6 +31,7 @@ KEYS: dict[str, type] = {
     "npm": dict,
     "markdown": bool,
     "markdownFiles": list,
+    "disableRules": list,
 }
 
 
@@ -64,6 +67,10 @@ def load(path: str) -> dict[str, Any]:
     for key, want in KEYS.items():
         if key in data and not isinstance(data[key], want):
             raise ConfigError(f"{path}: {key} must be {want.__name__}")
+    if "disableRules" in data:
+        unknown_rules = sorted(set(data["disableRules"]) - rules_mod.known_ids())
+        if unknown_rules:
+            raise ConfigError(f"{path}: unknown rule id(s) in disableRules: {', '.join(unknown_rules)}")
     if "model" in data:
         data["model"] = os.path.join(os.path.dirname(path), data["model"])
     if "markdownFiles" in data:

@@ -317,3 +317,44 @@ class TestParser:
     def test_repeatable_flags(self):
         args = build_parser().parse_args(["--exclude", "a/", "--exclude", "b/"])
         assert args.exclude == ["a/", "b/"]
+
+
+class TestDisableRules:
+    CODE = "// const value = computeSomethingUsefulHereForNoReason(input, arg);\n"
+
+    def test_unknown_rule_id_in_config_is_an_error(self, tmp_path):
+        p = tmp_path / ".commentlintrc.json"
+        p.write_text('{"disableRules": ["C999"]}', encoding="utf-8")
+        with pytest.raises(config_mod.ConfigError, match="C999"):
+            config_mod.load(str(p))
+
+    def test_known_rule_id_in_config_loads_cleanly(self, tmp_path):
+        p = tmp_path / ".commentlintrc.json"
+        p.write_text('{"disableRules": ["C10"]}', encoding="utf-8")
+        assert config_mod.load(str(p))["disableRules"] == ["C10"]
+
+    def test_unknown_cli_rule_id_exits_usage(self, project, capsys):
+        assert main([".", "--no-cache", "--disable-rule", "C999"]) == EXIT_USAGE
+        assert "C999" in capsys.readouterr().err
+
+    def test_disabled_rule_is_never_named_in_text_mode(self, capsys):
+        code, out = run(["--text", BAD, "--all", "--json"], capsys)
+        top = json.loads(out)["ranked"][0]["rule"]
+
+        code, out = run(["--text", BAD, "--all", "--json", "--disable-rule", top], capsys)
+        ids = {r["rule"] for r in json.loads(out)["ranked"]}
+        assert top not in ids
+
+    def test_disabling_c2_drops_commented_out_code_from_the_scan(self, project, capsys):
+        (project / "c.ts").write_text(self.CODE, encoding="utf-8")
+        _, out = run([".", "--threshold", "0.01"], capsys)
+        assert "commented-out code" in out
+
+        _, out = run([".", "--threshold", "0.01", "--disable-rule", "C2"], capsys)
+        assert "commented-out code" not in out
+
+    def test_disabling_c2_via_config_also_works(self, project, capsys):
+        (project / "c.ts").write_text(self.CODE, encoding="utf-8")
+        (project / ".commentlintrc.json").write_text('{"disableRules": ["C2"]}', encoding="utf-8")
+        _, out = run([".", "--threshold", "0.01"], capsys)
+        assert "commented-out code" not in out

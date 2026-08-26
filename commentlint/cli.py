@@ -48,6 +48,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--ignore-path", action="append", default=[], metavar="FILE",
                    help="extra ignore file; repeatable")
     p.add_argument("--with-node-modules", action="store_true", help="do not skip node_modules")
+    p.add_argument("--disable-rule", action="append", default=[], dest="disable_rules", metavar="RULE",
+                   help="never report this rule id (e.g. C10); repeatable")
     p.add_argument("--markdown", action="store_true",
                    help="pick up .md/.markdown files during directory walks (combined with "
                         "--with-node-modules, this also scans vendored markdown)")
@@ -95,6 +97,7 @@ class Options:
         self.exclude = list(args.exclude) + list(cfg.get("exclude", []))
         self.ignore_path = list(args.ignore_path) + list(cfg.get("ignorePath", []))
         self.with_node_modules = pick("with_node_modules", "withNodeModules", False)
+        self.disable_rules = set(args.disable_rules) | set(cfg.get("disableRules", []))
         self.markdown = pick("markdown", "markdown", False)
         self.markdown_files = list(args.markdown_files) + list(cfg.get("markdownFiles", []))
         self.cache = False if args.no_cache else cfg.get("cache", True)
@@ -141,6 +144,12 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_USAGE
     opts = Options(args, cfg)
 
+    unknown_rules = sorted(opts.disable_rules - rules_mod.known_ids())
+    if unknown_rules:
+        print(f"commentlint: unknown rule id(s) in --disable-rule: {', '.join(unknown_rules)}",
+              file=sys.stderr)
+        return EXIT_USAGE
+
     if args.false_negative is not None and args.false_positive is not None:
         print("commentlint: use only one of --false-negative or --false-positive", file=sys.stderr)
         return EXIT_USAGE
@@ -180,7 +189,8 @@ def run_single(text: str, args: argparse.Namespace, opts: Options) -> int:
     if opts.threshold is None:
         cut = thresholds.get(rules_mod.GATE_KEY, rules_mod.SINGLE_THRESHOLD)
 
-    order = sorted(range(len(probs)), key=lambda i: -probs[i])
+    order = [i for i in sorted(range(len(probs)), key=lambda i: -probs[i])
+             if backend.labels[i] not in opts.disable_rules]
     ranked = [(backend.labels[i], probs[i]) for i in (order if args.all else order[: args.top])]
 
     if args.as_json:
@@ -316,6 +326,7 @@ def run_scan(args: argparse.Namespace, opts: Options) -> int:
             "backend": opts.backend, "top": args.top,
             "markdown": opts.markdown,
             "markdown_files": tuple(sorted(opts.markdown_files)),
+            "disable_rules": tuple(sorted(opts.disable_rules)),
         }),
         strategy=opts.cache_strategy,
         enabled=opts.cache,
@@ -349,7 +360,8 @@ def run_scan(args: argparse.Namespace, opts: Options) -> int:
             if verdict == "skip":
                 continue
             if verdict == "code":
-                per_file[path].append(_finding(c, "C2", 1.0, [("C2", 1.0)], "heuristic"))
+                if "C2" not in opts.disable_rules:
+                    per_file[path].append(_finding(c, "C2", 1.0, [("C2", 1.0)], "heuristic"))
                 continue
             pending.append((path, c))
 
@@ -369,7 +381,10 @@ def run_scan(args: argparse.Namespace, opts: Options) -> int:
             # checked above, so it is never None on this path.
             if gate < cut:  # type: ignore[operator]
                 continue
-            order = sorted(range(len(probs)), key=lambda i: -probs[i])[: args.top]
+            order = [i for i in sorted(range(len(probs)), key=lambda i: -probs[i])
+                     if backend.labels[i] not in opts.disable_rules][: args.top]
+            if not order:
+                continue
             ranked = [(backend.labels[i], probs[i]) for i in order]
             # markdown prose reaches the code-comment gate and rule heads, but
             # nobody trained them on prose, so the finding is tagged distinctly
@@ -464,6 +479,8 @@ def report(
         if by_file:
             print("output format:")
             print(f"  {'line:col':<12} {'rule':8s} {'score':>4}  comment")
+            print("    see rule details with: commentlint --list-rules")
+            print("\nErrors:")
         for p, fs in by_file.items():
             print(_rel(p))
             for f in sorted(fs, key=lambda f: (f["line"], f["col"])):
