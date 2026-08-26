@@ -41,13 +41,13 @@ Not scored:
 
 ```
 packages/authoring/src/loop.ts
-   398:1   P4   0.85  Both shapes are accepted: one question is the common case...
+   398:1   ruleP4   0.85  Both shapes are accepted: one question is the common case...
 
 653 files, 7374 comments, 182 findings (cut 0.71, 0 cached, 7.3s)
 ```
 
-Findings are ranked worst-first and cut off at `--limit` (default 50); whatever is hidden
-is always counted on the line that hides it.
+Findings are ranked worst-first and cut off at `--limit` (default: no limit); whatever is
+hidden is always counted on the line that hides it.
 
 The score is the gate: how likely the comment breaks *some* rule. The rule beside it is
 the best of 16 ranked suspects, right about 64% of the time and in the top three 87% of

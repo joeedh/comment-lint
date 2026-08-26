@@ -149,6 +149,10 @@ class TestArgumentDisambiguation:
         _, out = run(["--text", "a.ts"], capsys)
         assert "VIOLATION" in out or "clean" in out
 
+    def test_entire_file_flag_scores_the_whole_file_as_one_comment(self, project, capsys):
+        _, out = run(["--entire-file", str(project / "a.ts")], capsys)
+        assert "VIOLATION" in out or "clean" in out
+
 
 class TestScanOutput:
     def test_findings_exit_one(self, project, capsys):
@@ -186,6 +190,32 @@ class TestScanOutput:
         (project / "c.ts").write_text("// short\n", encoding="utf-8")
         _, out = run([".", "--threshold", "0.01", "--min-length", "500"], capsys)
         assert ", 0 findings" in out
+
+    def test_findings_show_rule_ids_prefixed_with_rule(self, project, capsys):
+        _, out = run([".", "--threshold", "0.01"], capsys)
+        assert "ruleP" in out or "ruleC" in out
+        assert " P" not in out and " C" not in out
+
+    def test_no_limit_by_default_shows_every_finding(self, project, capsys):
+        (project / "many.ts").write_text(BAD * 60, encoding="utf-8")
+        _, out = run([".", "--threshold", "0.01"], capsys)
+        assert "more not shown" not in out
+
+
+class TestListRules:
+    def test_lists_every_rule_with_a_prefixed_id(self, capsys):
+        code = main(["--list-rules"])
+        out = capsys.readouterr().out
+        assert code == EXIT_CLEAN
+        assert "ruleP1" in out and "ruleC1" in out
+        assert "no-epigrams" in out
+
+    def test_json_lists_bare_rule_ids(self, capsys):
+        main(["--list-rules", "--json"])
+        data = json.loads(capsys.readouterr().out)
+        ids = {r["id"] for r in data["rules"]}
+        assert "P1" in ids and "C1" in ids
+        assert "ruleP1" not in ids
 
 
 class TestBackendSelection:

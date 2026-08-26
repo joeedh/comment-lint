@@ -17,6 +17,7 @@ from . import __version__
 
 LEDGER_NAME = ".commentlint-feedback.json"
 FALSE_NEGATIVE = "false_negative"
+FALSE_POSITIVE = "false_positive"
 
 Entry = dict[str, Any]
 
@@ -49,15 +50,22 @@ def load(path: str) -> list[Entry]:
     return data
 
 
-def entry(text: str, note: str | None = None, revision: str | None = None,
+def entry(text: str, kind: str = FALSE_NEGATIVE, note: str | None = None,
+          revision: str | None = None, rule: str | None = None,
           now: datetime | None = None) -> Entry:
-    """One false-negative report. Absent optional fields are left out."""
+    """One false-negative or false-positive report.
+
+    Absent optional fields are left out. `rule` is which rule a false positive
+    was wrongly flagged for; it has no meaning for a false negative.
+    """
     record: Entry = {
-        "kind": FALSE_NEGATIVE,
+        "kind": kind,
         "recorded": (now or datetime.now(timezone.utc)).isoformat(timespec="seconds"),
         "version": __version__,
         "text": text,
     }
+    if rule:
+        record["rule"] = rule
     if note:
         record["note"] = note
     if revision:

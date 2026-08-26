@@ -109,3 +109,17 @@ class TestCli:
         monkeypatch.delitem(sys.modules, "commentlint.backends", raising=False)
         main(["--false-negative", MISSED])
         assert "commentlint.backends" not in sys.modules
+
+    def test_a_false_positive_is_recorded_with_its_kind_and_rule(self, ledger, capsys):
+        assert main(["--false-positive", MISSED, "--rule", "P1", "--note", "reads fine"]) == EXIT_CLEAN
+        e = read(ledger)[0]
+        assert e["kind"] == feedback.FALSE_POSITIVE
+        assert e["rule"] == "P1"
+        assert e["note"] == "reads fine"
+
+    def test_false_negative_and_false_positive_together_is_a_usage_error(self, ledger, capsys):
+        assert main(["--false-negative", MISSED, "--false-positive", MISSED]) == EXIT_USAGE
+        assert not ledger.exists()
+
+    def test_a_rule_without_a_report_is_a_usage_error(self, ledger, capsys):
+        assert main(["--rule", "P1", "--no-cache"]) == EXIT_USAGE

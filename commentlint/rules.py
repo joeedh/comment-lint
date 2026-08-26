@@ -29,6 +29,13 @@ def descriptions() -> dict[str, str]:
         return {r["id"]: r["desc"] for r in json.load(f)["rules"]}
 
 
+def all_rules() -> list[dict[str, str]]:
+    """Every rule in the taxonomy, trained or not: id, name and description."""
+    with open(RULES_PATH, encoding="utf-8") as f:
+        rules: list[dict[str, str]] = json.load(f)["rules"]
+        return rules
+
+
 def thresholds(model_dir: str | None = None) -> dict[str, float]:
     path = os.path.join(model_dir or LINEAR_DIR, "thresholds.json")
     if not os.path.exists(path):

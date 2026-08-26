@@ -29,7 +29,6 @@ from .discover import discover
 
 EXIT_CLEAN, EXIT_FINDINGS, EXIT_USAGE, EXIT_INTERNAL = 0, 1, 2, 3
 TOP_K = 3
-DEFAULT_LIMIT = 50
 GLOB_CHARS = set("*?[")
 
 
@@ -40,9 +39,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("paths", nargs="*", help="files, directories or globs to scan")
     p.add_argument("--text", help="score this literal comment text instead of scanning")
-    p.add_argument("--file", help="score the whole contents of this file as one comment")
+    p.add_argument("--entire-file", help="score the whole contents of this file as one comment")
     p.add_argument("--threshold", type=float, help="gate cut (default: the model's own calibrated cut)")
-    p.add_argument("--limit", type=int, help=f"most findings to print (default {DEFAULT_LIMIT})")
+    p.add_argument("--limit", type=int, help="most findings to print (default: no limit)")
     p.add_argument("--min-length", type=int, help=f"skip comments shorter than this (default {filters.MIN_LEN})")
     p.add_argument("--exclude", action="append", default=[], metavar="PATTERN",
                    help="gitignore-style pattern to skip; repeatable")
@@ -62,10 +61,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--show-code", action="store_true", help="list commented-out code, not just count it")
     p.add_argument("--all", action="store_true", help="single-comment mode: every rule's probability")
     p.add_argument("--coverage", action="store_true", help="list which rules the model covers")
+    p.add_argument("--list-rules", action="store_true", help="list every rule in the taxonomy and what it means")
     p.add_argument("--false-negative", metavar="COMMENT",
                    help="record a comment the model wrongly passed; - reads it from stdin")
-    p.add_argument("--note", help="with --false-negative: why it should have been flagged")
+    p.add_argument("--false-positive", metavar="COMMENT",
+                   help="record a comment the model wrongly flagged; - reads it from stdin")
+    p.add_argument("--note", help="with --false-negative/--false-positive: why the verdict was wrong")
     p.add_argument("--revision", help="with --false-negative: how the comment should read instead")
+    p.add_argument("--rule", help="with --false-positive: which rule it was wrongly flagged for")
     p.add_argument("--ledger", help=f"where reports are appended (default ./{feedback_mod.LEDGER_NAME})")
     p.add_argument("--version", action="version", version=f"commentlint {__version__}")
     return p
@@ -82,7 +85,7 @@ class Options:
             return cfg.get(key, default)
 
         self.threshold = pick("threshold", "threshold", None)
-        self.limit = pick("limit", "limit", DEFAULT_LIMIT)
+        self.limit = pick("limit", "limit", None)
         self.min_length = pick("min_length", "minLength", filters.MIN_LEN)
         self.exclude = list(args.exclude) + list(cfg.get("exclude", []))
         self.ignore_path = list(args.ignore_path) + list(cfg.get("ignorePath", []))
@@ -131,18 +134,27 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_USAGE
     opts = Options(args, cfg)
 
-    if args.false_negative is not None:
-        return run_false_negative(args)
-    if args.note or args.revision:
-        print("commentlint: --note and --revision only apply with --false-negative", file=sys.stderr)
+    if args.false_negative is not None and args.false_positive is not None:
+        print("commentlint: use only one of --false-negative or --false-positive", file=sys.stderr)
         return EXIT_USAGE
+    if args.false_negative is not None:
+        return run_feedback(args, feedback_mod.FALSE_NEGATIVE, args.false_negative)
+    if args.false_positive is not None:
+        return run_feedback(args, feedback_mod.FALSE_POSITIVE, args.false_positive)
+    if args.note or args.revision or args.rule:
+        print("commentlint: --note, --revision and --rule only apply with "
+              "--false-negative or --false-positive", file=sys.stderr)
+        return EXIT_USAGE
+
+    if args.list_rules:
+        return run_list_rules(args)
 
     if args.coverage:
         return run_coverage(args, opts)
 
     text = args.text
-    if args.file:
-        with open(args.file, encoding="utf-8", errors="replace") as f:
+    if args.entire_file:
+        with open(args.entire_file, encoding="utf-8", errors="replace") as f:
             text = f.read()
     if text is None and len(args.paths) == 1 and not looks_like_path(args.paths[0]):
         text = args.paths[0]  # back-compat: a bare string that is not a path is a comment
@@ -176,28 +188,28 @@ def run_single(text: str, args: argparse.Namespace, opts: Options) -> int:
         else:
             print(f"clean      {gate:.2f} (cut {cut:.2f})")
         for rule_id, prob in ranked:
-            print(f"  {rule_id:5s} {prob:.2f}  {rule_desc.get(rule_id, '')[:90]}")
+            print(f"  {_display_rule(rule_id):8s} {prob:.2f}  {rule_desc.get(rule_id, '')[:90]}")
     return EXIT_FINDINGS if (gate is not None and gate >= cut) else EXIT_CLEAN
 
 
-def run_false_negative(args: argparse.Namespace) -> int:
-    """Append one missed comment to the ledger and print where it landed.
+def run_feedback(args: argparse.Namespace, kind: str, text: str) -> int:
+    """Append one false-negative or false-positive report to the ledger.
 
-    Reporting a miss is not a finding, so this exits 0 even though the comment
-    is by assumption a violation. A caller scripting reports can then tell a
-    refused report from an accepted one by the exit code alone.
+    Reporting a miss or a wrong flag is not itself a finding, so this exits 0
+    either way. A caller scripting reports can then tell a refused report from
+    an accepted one by the exit code alone.
     """
-    text = args.false_negative
+    flag = "--false-negative" if kind == feedback_mod.FALSE_NEGATIVE else "--false-positive"
     if text == "-":
         # PowerShell writes a BOM at the head of a UTF-8 pipe, and it would
         # otherwise be stored as the first character of the comment
         text = sys.stdin.read().lstrip("﻿")
     if not text.strip():
-        print("commentlint: --false-negative needs the comment text", file=sys.stderr)
+        print(f"commentlint: {flag} needs the comment text", file=sys.stderr)
         return EXIT_USAGE
 
     path = args.ledger or feedback_mod.default_location()
-    record = feedback_mod.entry(text, note=args.note, revision=args.revision)
+    record = feedback_mod.entry(text, kind=kind, note=args.note, revision=args.revision, rule=args.rule)
     try:
         total = feedback_mod.append(path, record)
     except feedback_mod.LedgerError as e:
@@ -208,8 +220,21 @@ def run_false_negative(args: argparse.Namespace) -> int:
         json.dump({"ledger": path, "entries": total, "recorded": record}, sys.stdout, indent=1)
         print()
     elif not args.quiet:
-        print(f"recorded a false negative in {_rel(path)} "
+        label = "false negative" if kind == feedback_mod.FALSE_NEGATIVE else "false positive"
+        print(f"recorded a {label} in {_rel(path)} "
               f"({total} entr{'y' if total == 1 else 'ies'})")
+    return EXIT_CLEAN
+
+
+def run_list_rules(args: argparse.Namespace) -> int:
+    rules = rules_mod.all_rules()
+    if args.as_json:
+        json.dump({"rules": rules}, sys.stdout, indent=1)
+        print()
+        return EXIT_CLEAN
+    for r in rules:
+        print(f"  {_display_rule(r['id']):8s} {r['name']}")
+        print(f"           {r['desc']}")
     return EXIT_CLEAN
 
 
@@ -236,10 +261,10 @@ def run_coverage(args: argparse.Namespace, opts: Options) -> int:
                 f"top-{k[3:]} {v:.0%}" for k, v in sorted(a.items())) + "\n")
     print(f"RANKED ({len(cov['trained'])} rules -- these can be named as suspects):")
     for r in cov["trained"]:
-        print(f"  {r:5s} {rule_desc.get(r, '')[:85]}")
+        print(f"  {_display_rule(r):8s} {rule_desc.get(r, '')[:85]}")
     print(f"\nUNTRAINED ({len(cov['untrained'])} rules -- never named, too few examples):")
     for r, n in cov["untrained"].items():
-        print(f"  {r:5s} ({n} examples) {rule_desc.get(r, '')[:75]}")
+        print(f"  {_display_rule(r):8s} ({n} examples) {rule_desc.get(r, '')[:75]}")
     return EXIT_CLEAN
 
 
@@ -395,6 +420,9 @@ def report(
         by_file = {}
         for p, f in shown:
             by_file.setdefault(p, []).append(f)
+        if by_file:
+            print("output format:")
+            print(f"  {'line:col':<12} {'rule':8s} {'score':>4}  comment")
         for p, fs in by_file.items():
             print(_rel(p))
             for f in sorted(fs, key=lambda f: (f["line"], f["col"])):
@@ -403,7 +431,7 @@ def report(
                 pos = f"{f['line']}:{f['col']}"
                 if f["end_line"] != f["line"]:
                     pos += f"-{f['end_line']}:{f['end_col']}"
-                print(f"  {pos:<12} {f['rule']:4s} {tag:>4}  {head[:64]}")
+                print(f"  {pos:<12} {_display_rule(f['rule']):8s} {tag:>4}  {head[:64]}")
             print()
         if len(listed) > len(shown):
             print(f"... and {len(listed) - len(shown)} more not shown (--limit {opts.limit})\n")
@@ -420,6 +448,16 @@ def report(
         if len(skipped) > 5:
             print(f"  ... and {len(skipped) - 5} more")
     return EXIT_FINDINGS if total else EXIT_CLEAN
+
+
+def _display_rule(rule_id: str) -> str:
+    """A rule id as shown to a person: 'rule' plus the id, e.g. 'ruleP1'.
+
+    Stored ids (thresholds.json, coverage.json, model labels, the ledger) keep
+    the bare 'P1'/'C1' form; this prefix is applied only where a rule id is
+    printed for a reader.
+    """
+    return f"rule{rule_id}"
 
 
 def _rel(path: str) -> str:
