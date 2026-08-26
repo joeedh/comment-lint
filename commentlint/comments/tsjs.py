@@ -66,7 +66,10 @@ def _merge_runs(comments: list[Comment]) -> list[Comment]:
             and c.col == prev.col
         ):
             raw = prev.raw + "\n" + c.raw
-            out[-1] = Comment(prev.path, prev.line, prev.col, "line", raw, normalize(raw, "line"))
+            out[-1] = Comment(
+                prev.path, prev.line, prev.col, "line", raw, normalize(raw, "line"),
+                c.end_line, c.end_col,
+            )
             continue
         out.append(c)
     return out
@@ -227,7 +230,12 @@ def _to_comment(path: str, src: str, starts: list[int], span: Span) -> Comment:
     start, end, kind = span
     li = bisect_right(starts, start) - 1
     col = start - starts[li] + 1
+    end_li = bisect_right(starts, end - 1) - 1 if end > start else li
+    end_col = end - starts[end_li] + 1
     if kind == "line" and src[starts[li] : start].strip():
         kind = "trailing"
     raw = src[start:end]
-    return Comment(path, li + 1, col, kind, raw, normalize(raw, "line" if kind in ("line", "trailing") else "block"))
+    return Comment(
+        path, li + 1, col, kind, raw, normalize(raw, "line" if kind in ("line", "trailing") else "block"),
+        end_li + 1, end_col,
+    )

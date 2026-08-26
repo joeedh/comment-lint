@@ -46,10 +46,13 @@ def _hash_comments(path: str, src: str) -> list[Comment]:
     def flush() -> None:
         if not run:
             return
-        first = run[0]
+        first, last = run[0], run[-1]
         raw = "\n".join(t.string for t in run)
         out.append(
-            Comment(path, first.start[0], first.start[1] + 1, "line", raw, normalize(raw, "python"))
+            Comment(
+                path, first.start[0], first.start[1] + 1, "line", raw, normalize(raw, "python"),
+                last.end[0], last.end[1] + 1,
+            )
         )
         run.clear()
 
@@ -59,7 +62,10 @@ def _hash_comments(path: str, src: str) -> list[Comment]:
         if not standalone:
             flush()
             out.append(
-                Comment(path, row, col + 1, "trailing", t.string, normalize(t.string, "python"))
+                Comment(
+                    path, row, col + 1, "trailing", t.string, normalize(t.string, "python"),
+                    t.end[0], t.end[1] + 1,
+                )
             )
             continue
         if run and (row != run[-1].start[0] + 1 or col != run[-1].start[1]):
@@ -85,6 +91,7 @@ def _docstrings(path: str, src: str) -> list[Comment]:
         val = body[0].value
         if not (isinstance(val, ast.Constant) and isinstance(val.value, str)):
             continue
+        assert val.end_lineno is not None and val.end_col_offset is not None
         out.append(
             Comment(
                 path,
@@ -93,6 +100,8 @@ def _docstrings(path: str, src: str) -> list[Comment]:
                 "doc",
                 ast.get_source_segment(src, val) or val.value,
                 normalize(val.value, "docstring"),
+                val.end_lineno,
+                val.end_col_offset + 1,
             )
         )
     return out

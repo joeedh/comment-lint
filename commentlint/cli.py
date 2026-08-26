@@ -342,7 +342,8 @@ def _finding(
     source: str,
 ) -> cache_mod.Finding:
     return {
-        "line": c.line, "col": c.col, "kind": c.kind, "rule": rule,
+        "line": c.line, "col": c.col, "end_line": c.end_line, "end_col": c.end_col,
+        "kind": c.kind, "rule": rule,
         "score": round(float(score), 4),
         "ranked": [{"rule": r, "score": round(float(p), 4)} for r, p in ranked],
         "text": c.text, "source": source,
@@ -399,7 +400,10 @@ def report(
             for f in sorted(fs, key=lambda f: (f["line"], f["col"])):
                 tag = "code" if f["source"] == "heuristic" else f"{f['score']:.2f}"
                 head = f["text"].split("\n")[0]
-                print(f"  {f['line']:>4}:{f['col']:<3} {f['rule']:4s} {tag:>4}  {head[:64]}")
+                pos = f"{f['line']}:{f['col']}"
+                if f["end_line"] != f["line"]:
+                    pos += f"-{f['end_line']}:{f['end_col']}"
+                print(f"  {pos:<12} {f['rule']:4s} {tag:>4}  {head[:64]}")
             print()
         if len(listed) > len(shown):
             print(f"... and {len(listed) - len(shown)} more not shown (--limit {opts.limit})\n")
