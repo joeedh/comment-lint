@@ -3,8 +3,9 @@
 * Research reports go in docs/research
 * Plans go in docs/plans 
   - Always write plans into the repo
-  - When a plan is completed it should be pressure tested with an agent, and the 
+  - When a plan is written it should be pressure tested with an agent, and the 
     results folded back in.
+  - When a plan is completed the implementation should be reviewed by an agent 
 
 ## ToDos
 - todos.md stores todos
