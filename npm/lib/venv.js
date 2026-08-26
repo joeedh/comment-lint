@@ -80,6 +80,7 @@ function ensureVenv(requirementsPath, { forceInstall = false } = {}) {
           'commentlint: no Python interpreter found (looked for py -3, python3, python)'
         );
       }
+      console.log("creating virtual python env (one-time)")
       const created = spawnSync(base.cmd, [...base.args, '-m', 'venv', venvDir], {
         stdio: 'inherit',
       });
@@ -88,6 +89,7 @@ function ensureVenv(requirementsPath, { forceInstall = false } = {}) {
       }
     }
 
+    console.log("  installing dependencies")
     const installed = spawnSync(
       venvPython(venvDir),
       ['-m', 'pip', 'install', '-q', '-r', requirementsPath],
@@ -96,6 +98,7 @@ function ensureVenv(requirementsPath, { forceInstall = false } = {}) {
     if (installed.status !== 0) {
       throw new Error(`commentlint: failed to install dependencies into ${venvDir}`);
     }
+    console.log("  done")
     fs.writeFileSync(markerPath, '');
     return venvDir;
   } finally {
