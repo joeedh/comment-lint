@@ -40,6 +40,12 @@ def known_ids() -> set[str]:
     return {r["id"] for r in all_rules()}
 
 
+# Style rules whose bar for what counts as a violation is a per-project call,
+# not something the taxonomy can settle -- so they start off and a project
+# opts back in with enableRules / --enable-rule.
+DEFAULT_DISABLED: set[str] = {"C10", "C11"}
+
+
 def thresholds(model_dir: str | None = None) -> dict[str, float]:
     path = os.path.join(model_dir or LINEAR_DIR, "thresholds.json")
     if not os.path.exists(path):

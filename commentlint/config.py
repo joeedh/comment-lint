@@ -32,6 +32,7 @@ KEYS: dict[str, type] = {
     "markdown": bool,
     "markdownFiles": list,
     "disableRules": list,
+    "enableRules": list,
 }
 
 
@@ -71,6 +72,10 @@ def load(path: str) -> dict[str, Any]:
         unknown_rules = sorted(set(data["disableRules"]) - rules_mod.known_ids())
         if unknown_rules:
             raise ConfigError(f"{path}: unknown rule id(s) in disableRules: {', '.join(unknown_rules)}")
+    if "enableRules" in data:
+        unknown_rules = sorted(set(data["enableRules"]) - rules_mod.known_ids())
+        if unknown_rules:
+            raise ConfigError(f"{path}: unknown rule id(s) in enableRules: {', '.join(unknown_rules)}")
     if "model" in data:
         data["model"] = os.path.join(os.path.dirname(path), data["model"])
     if "markdownFiles" in data:

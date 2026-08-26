@@ -6,7 +6,9 @@ import pytest
 from commentlint import ENCODER_DIR, LINEAR_DIR
 from commentlint import config as config_mod
 from commentlint import rules as rules_mod
-from commentlint.cli import EXIT_CLEAN, EXIT_FINDINGS, EXIT_USAGE, build_parser, looks_like_path, main
+from commentlint.cli import (
+    EXIT_CLEAN, EXIT_FINDINGS, EXIT_USAGE, Options, build_parser, looks_like_path, main,
+)
 
 BAD = "// The leak scan is the refusal, and the refusal is what the caller reads back.\n"
 PLAIN = "// increment the counter by one before the next loop iteration runs here\n"
@@ -358,3 +360,36 @@ class TestDisableRules:
         (project / ".commentlintrc.json").write_text('{"disableRules": ["C2"]}', encoding="utf-8")
         _, out = run([".", "--threshold", "0.01"], capsys)
         assert "commented-out code" not in out
+
+
+class TestEnableRules:
+    def test_c10_and_c11_are_disabled_by_default(self):
+        opts = Options(build_parser().parse_args([]), {})
+        assert opts.disable_rules >= rules_mod.DEFAULT_DISABLED
+
+    def test_enable_rule_turns_a_default_disabled_rule_back_on(self):
+        opts = Options(build_parser().parse_args(["--enable-rule", "C10"]), {})
+        assert "C10" not in opts.disable_rules
+        assert "C11" in opts.disable_rules
+
+    def test_enable_rule_via_config_also_works(self):
+        opts = Options(build_parser().parse_args([]), {"enableRules": ["C10"]})
+        assert "C10" not in opts.disable_rules
+
+    def test_disable_wins_over_enable_for_the_same_rule(self):
+        opts = Options(build_parser().parse_args(["--enable-rule", "C10", "--disable-rule", "C10"]), {})
+        assert "C10" in opts.disable_rules
+
+    def test_unknown_cli_enable_rule_id_exits_usage(self, project, capsys):
+        assert main([".", "--no-cache", "--enable-rule", "C999"]) == EXIT_USAGE
+        assert "C999" in capsys.readouterr().err
+
+    def test_unknown_rule_id_in_config_enable_rules_is_an_error(self, tmp_path):
+        p = tmp_path / ".commentlintrc.json"
+        p.write_text('{"enableRules": ["C999"]}', encoding="utf-8")
+        with pytest.raises(config_mod.ConfigError, match="C999"):
+            config_mod.load(str(p))
+
+    def test_list_rules_marks_default_disabled_rules(self, capsys):
+        _, out = run(["--list-rules"], capsys)
+        assert "ruleC10  non-doc-comment-slashes (disabled)" in out

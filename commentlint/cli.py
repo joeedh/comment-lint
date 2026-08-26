@@ -50,6 +50,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--with-node-modules", action="store_true", help="do not skip node_modules")
     p.add_argument("--disable-rule", action="append", default=[], dest="disable_rules", metavar="RULE",
                    help="never report this rule id (e.g. C10); repeatable")
+    p.add_argument("--enable-rule", action="append", default=[], dest="enable_rules", metavar="RULE",
+                   help=f"report this rule id even though it is off by default "
+                        f"({', '.join(sorted(rules_mod.DEFAULT_DISABLED))}); repeatable")
     p.add_argument("--markdown", action="store_true",
                    help="pick up .md/.markdown files during directory walks (combined with "
                         "--with-node-modules, this also scans vendored markdown)")
@@ -102,7 +105,10 @@ class Options:
         self.exclude = list(args.exclude) + list(cfg.get("exclude", []))
         self.ignore_path = list(args.ignore_path) + list(cfg.get("ignorePath", []))
         self.with_node_modules = pick("with_node_modules", "withNodeModules", False)
-        self.disable_rules = set(args.disable_rules) | set(cfg.get("disableRules", []))
+        self.explicit_disable_rules = set(args.disable_rules) | set(cfg.get("disableRules", []))
+        self.enable_rules = set(args.enable_rules) | set(cfg.get("enableRules", []))
+        self.disable_rules = ((rules_mod.DEFAULT_DISABLED - self.enable_rules)
+                               | self.explicit_disable_rules)
         self.markdown = pick("markdown", "markdown", False)
         self.markdown_files = list(args.markdown_files) + list(cfg.get("markdownFiles", []))
         self.cache = False if args.no_cache else cfg.get("cache", True)
@@ -149,9 +155,14 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_USAGE
     opts = Options(args, cfg)
 
-    unknown_rules = sorted(opts.disable_rules - rules_mod.known_ids())
+    unknown_rules = sorted(opts.explicit_disable_rules - rules_mod.known_ids())
     if unknown_rules:
         print(f"commentlint: unknown rule id(s) in --disable-rule: {', '.join(unknown_rules)}",
+              file=sys.stderr)
+        return EXIT_USAGE
+    unknown_rules = sorted(opts.enable_rules - rules_mod.known_ids())
+    if unknown_rules:
+        print(f"commentlint: unknown rule id(s) in --enable-rule: {', '.join(unknown_rules)}",
               file=sys.stderr)
         return EXIT_USAGE
 
@@ -168,7 +179,7 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_USAGE
 
     if args.list_rules:
-        return run_list_rules(args)
+        return run_list_rules(args, opts)
 
     if args.coverage:
         return run_coverage(args, opts)
@@ -248,14 +259,16 @@ def run_feedback(args: argparse.Namespace, kind: str, text: str) -> int:
     return EXIT_CLEAN
 
 
-def run_list_rules(args: argparse.Namespace) -> int:
+def run_list_rules(args: argparse.Namespace, opts: Options) -> int:
     rules = rules_mod.all_rules()
     if args.as_json:
-        json.dump({"rules": rules}, sys.stdout, indent=1)
+        out = [{**r, "disabled": r["id"] in opts.disable_rules} for r in rules]
+        json.dump({"rules": out}, sys.stdout, indent=1)
         print()
         return EXIT_CLEAN
     for r in rules:
-        print(f"  {_display_rule(r['id']):8s} {r['name']}")
+        suffix = " (disabled)" if r["id"] in opts.disable_rules else ""
+        print(f"  {_display_rule(r['id']):8s} {r['name']}{suffix}")
         print(f"           {r['desc']}")
     return EXIT_CLEAN
 

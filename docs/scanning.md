@@ -85,12 +85,17 @@ overrides it. One config per run — there are no per-file `overrides`.
 ```
 
 Keys: `threshold` `limit` `minLength` `exclude` `ignorePath` `withNodeModules` `cache`
-`cacheStrategy` `backend` `model` `disableRules`. An unknown key is an error, not a shrug.
+`cacheStrategy` `backend` `model` `disableRules` `enableRules`. An unknown key is an error,
+not a shrug.
 
 `disableRules` is a list of rule ids (`C10`, `P9`, ...) that are never reported. The gate
 that decides whether a comment is flagged still runs over every rule, so disabling one only
 changes which rule a finding is named after -- a comment that would only have been named for
 a disabled rule reports clean instead of shifting to a different rule.
+
+`C10` and `C11` are in `rules.DEFAULT_DISABLED` and start off; `enableRules` names one to
+turn back on. The effective disabled set is `(DEFAULT_DISABLED - enableRules) | disableRules`,
+so a rule named in both stays disabled.
 
 `backend` is `linear` or `encoder`. Scanning cuts on the gate, so a model without a gate
 head refuses a scan rather than reporting every file clean; it still ranks rules for one

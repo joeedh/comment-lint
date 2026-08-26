@@ -63,7 +63,8 @@ option, with the same names the CLI flags use underneath their dashes:
   "model": "./model_linear",
   "markdown": false,
   "markdownFiles": ["CLAUDE.md"],
-  "disableRules": ["C10", "P9"]
+  "disableRules": ["P9"],
+  "enableRules": ["C10"]
 }
 ```
 
@@ -80,6 +81,13 @@ that decides whether a comment is flagged at all is a single score across every 
 not affected, so a comment that would only have been named for a disabled rule is now
 reported clean rather than under a different rule. `C2` (commented-out code) is a heuristic
 outside the model and can be disabled the same way.
+
+`C10` and `C11` ship off by default: whether comments use `//` versus `/* */` and how many
+lines a non-doc comment may run are per-project style calls, not something the taxonomy can
+settle for every codebase. `enableRules` (or `--enable-rule RULE`, repeatable) turns one back
+on. A rule named in both `disableRules` and `enableRules` stays disabled -- disabling is
+treated as the more specific request. `--list-rules` marks each rule that is off in the
+resolved config with `(disabled)`.
 
 ### Markdown
 
