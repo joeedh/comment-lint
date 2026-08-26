@@ -5,6 +5,9 @@
   "bin": {
     "commentlint": "bin/commentlint.js"
   },
+  "scripts": {
+    "postinstall": "node bin/commentlint.js --install-deps || exit 0"
+  },
   "files": [
     "bin",
     "lib",
