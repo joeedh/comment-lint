@@ -335,11 +335,13 @@ def release(argv: Sequence[str]) -> int:
 
     # Preflight before anything else -- a release with no way to publish it
     # isn't worth building.
+    print("== Checking gh authentication status... ==")
     if run("gh", "auth", "status") != 0:
         print("release: not authenticated with gh; run `gh auth login` first", file=sys.stderr)
         return 1
 
     if "--skip-check" not in flags:
+        print("== running tests ==")
         code = TASKS["check"]([])
         if code != 0:
             return code
@@ -347,6 +349,7 @@ def release(argv: Sequence[str]) -> int:
     # Runs after check: check is cheap and deterministic, test-npm does a
     # real npm install and a first-time venv build.
     if "--skip-npm-test" not in flags:
+        print("== running npm package install workflow test ==")
         code = TASKS["test-npm"]([])
         if code != 0:
             return code
@@ -364,12 +367,15 @@ def release(argv: Sequence[str]) -> int:
     dist_dir = os.path.join(ROOT, "dist")
     os.makedirs(dist_dir, exist_ok=True)
     zip_path = os.path.join(dist_dir, f"commentlint-v{new_version}.zip")
+    print("== Creating zip package ==")
     build_release_zip(zip_path)
+    print("== Creating npm release ==")
     build_npm_release(new_version)
 
     write_version_init(new_version)
     write_npm_package_version(new_version)
 
+    print("== Tagging git and pushing ==")
     if run("git", "add", "commentlint/__init__.py", "npm/package.json") != 0:
         return 1
     if run("git", "commit", "-m", f"Release v{new_version}") != 0:
@@ -402,7 +408,11 @@ def publish_npm(argv: Sequence[str]) -> int:
         )
         return 1
     print(f"$ npm publish   (cwd={release_dir})", flush=True)
-    code = subprocess.call(["npm", "publish"], cwd=release_dir, shell=os.name == "nt")
+    code = subprocess.call(["npm", "login"], cwd=release_dir, shell=os.name == "nt")
+    if code != 0:
+        print('publish-npm: "npm login" failed', file=sys.stderr)
+        return code
+    code = subprocess.call(["npm", "publish", "--access=public"], cwd=release_dir, shell=os.name == "nt")
     if code == 0:
         shutil.rmtree(release_dir)
         print("published; .npm-release/ removed")

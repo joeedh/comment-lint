@@ -8,7 +8,7 @@ Anthropic's Claude Opus 5 model in 2026.
 
 ## Installing
 
-JS-project users can `npm install -g commentlint` (or add it as a project dependency).
+JS-project users can `npm install -g comment-lint` (or add it as a project dependency).
 The npm package is a thin wrapper that manages its own Python venv under
 `~/.commentlint/pylib/`, built the first time it runs; `--install-deps` builds it up front
 and `--print-dep-dir` prints where it lives. A commentlint found in a project's own

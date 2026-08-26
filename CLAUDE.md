@@ -29,13 +29,15 @@
 * `bin/` holds the launchers an installed user runs: `commentlint` for sh and
   `commentlint.cmd` for cmd and PowerShell. Both are thin wrappers around predict.py, so
   a change to the CLI needs nothing done to them.
-* `npm/` holds the npm package (`commentlint` on the registry) that wraps predict.py in a
-  managed Python venv for JS-project users. `python task.py test-npm` exercises it end to
-  end against an isolated `HOME`, and runs automatically as part of `release`.
+* `npm/` holds the npm package (`comment-lint` on the registry, since `commentlint` was
+  rejected as too close to `commitlint`) that wraps predict.py in a managed Python venv for
+  JS-project users. `python task.py test-npm` exercises it end to end against an isolated
+  `HOME`, and runs automatically as part of `release`.
   `python task.py release <major|minor|micro|X.Y.Z>` bumps the version, builds the source
   zip and the npm release directory, tags git, pushes, and cuts a GitHub release;
-  `python task.py publish-npm` then runs `npm publish` from `.npm-release/` and deletes it
-  on success. See docs/plans/release-and-npm-distribution.md for the full design.
+  `python task.py publish-npm` then runs `npm login` followed by `npm publish` from
+  `.npm-release/` and deletes it on success. See
+  docs/plans/release-and-npm-distribution.md for the full design.
 
 ## Invariants
 * `cli.py` must not import `backends.py` at module scope. Importing scikit-learn costs
