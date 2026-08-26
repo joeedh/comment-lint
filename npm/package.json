@@ -1,6 +1,6 @@
 {
   "name": "commentlint",
-  "version": "0.2.0",
+  "version": "0.3.1",
   "description": "Flag code comments that break a project's comment rules. Uses a simple machine learning model.",
   "bin": {
     "commentlint": "bin/commentlint.js"
