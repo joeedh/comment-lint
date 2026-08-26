@@ -48,11 +48,12 @@ async function main() {
     console.log(venvDirFor(requirementsPath));
     process.exit(0);
   }
-  if (args.includes('--install-deps')) {
+  if (args.includes('--install-deps') || args.includes('--check-deps')) {
+    const force = args.includes('--install-deps') 
     const pyRoot = await resolvePyRoot(readNpmConfig(process.cwd()));
     const requirementsPath = path.join(pyRoot, 'requirements-runtime.txt');
     try {
-      ensureVenv(requirementsPath, { forceInstall: true });
+      ensureVenv(requirementsPath, { forceInstall: force });
       process.exit(0);
     } catch (err) {
       console.error(String(err.message || err));

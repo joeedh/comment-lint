@@ -6,7 +6,7 @@
     "commentlint": "bin/commentlint.js"
   },
   "scripts": {
-    "postinstall": "node bin/commentlint.js --install-deps || exit 0"
+    "postinstall": "node bin/commentlint.js --check-deps || exit 0"
   },
   "files": [
     "bin",
