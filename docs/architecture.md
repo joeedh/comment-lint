@@ -12,6 +12,17 @@ a detection: a rule that fires on 5% of comments puts mostly negatives at the to
 corpus-wide ranking even at a respectable AUC, while asking which of 16 rules best explains one
 already-suspect comment lands a true rule in the top three 87% of the time.
 
+## Scope: a verdict, not a rewrite
+
+commentlint reports a violation and a rule; it never proposes replacement prose. The
+caller that wrote the comment, typically an LLM inside an agent harness, holds the
+surrounding code context a rewrite model would have to re-derive, and can fold a
+rejection back into its own memory or instructions to avoid repeating the mistake. A
+built-in rewriter would only help a caller with no LLM in the loop to act on a
+rejection, such as plain CI on a human-only repository, which is a narrower case than
+the one commentlint targets. A rewrite mode, if it is ever built, is a distinct opt-in
+feature rather than the default output shape.
+
 ## The shape of a run
 
 ```
