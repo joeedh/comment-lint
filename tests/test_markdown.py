@@ -91,6 +91,60 @@ class TestFrontMatter:
         assert out[0].text.startswith("A paragraph after")
 
 
+class TestDisableDirectives:
+    def test_block_between_off_and_on_is_dropped(self):
+        src = (
+            "Kept paragraph, long enough to be worth checking here in this test.\n"
+            "\n"
+            "<!-- commentlint-off -->\n"
+            "\n"
+            "Dropped paragraph, long enough to be worth checking here in this test.\n"
+            "\n"
+            "<!-- commentlint-on -->\n"
+            "\n"
+            "Also kept, a paragraph long enough to be worth checking here in this test.\n"
+        )
+        texts = [c.text for c in markdown.extract("x.md", src)]
+        assert texts == [
+            "Kept paragraph, long enough to be worth checking here in this test.",
+            "Also kept, a paragraph long enough to be worth checking here in this test.",
+        ]
+
+    def test_unterminated_off_disables_the_rest_of_the_file(self):
+        src = (
+            "Kept paragraph, long enough to be worth checking here in this test.\n"
+            "\n"
+            "<!-- commentlint-off -->\n"
+            "\n"
+            "Dropped paragraph, long enough to be worth checking here in this test.\n"
+        )
+        texts = [c.text for c in markdown.extract("x.md", src)]
+        assert texts == ["Kept paragraph, long enough to be worth checking here in this test."]
+
+    def test_multiple_off_on_pairs_each_toggle_independently(self):
+        src = (
+            "Kept one, a paragraph long enough to be worth checking here in this test.\n"
+            "\n"
+            "<!-- commentlint-off -->\n"
+            "Dropped one, a paragraph long enough to be worth checking here in this test.\n"
+            "<!-- commentlint-on -->\n"
+            "\n"
+            "Kept two, a paragraph long enough to be worth checking here in this test.\n"
+            "\n"
+            "<!-- commentlint-off -->\n"
+            "Dropped two, a paragraph long enough to be worth checking here in this test.\n"
+            "<!-- commentlint-on -->\n"
+            "\n"
+            "Kept three, a paragraph long enough to be worth checking here in this test.\n"
+        )
+        texts = [c.text for c in markdown.extract("x.md", src)]
+        assert texts == [
+            "Kept one, a paragraph long enough to be worth checking here in this test.",
+            "Kept two, a paragraph long enough to be worth checking here in this test.",
+            "Kept three, a paragraph long enough to be worth checking here in this test.",
+        ]
+
+
 class TestClassifyMarkdown:
     def test_short_text_is_skipped(self):
         assert classify_markdown("short") == "skip"

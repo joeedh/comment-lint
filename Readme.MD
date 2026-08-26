@@ -86,6 +86,13 @@ The shipped model was trained on code comments, not on prose against a style gui
 markdown finding is a weaker signal than a code-comment one. It is tagged `"model-markdown"`
 and carries `"experimental": true` in `--json`, and a banner calls it out in the human report.
 
+`<!-- commentlint-off -->` and `<!-- commentlint-on -->`, each on its own line, disable
+scanning between them. A block whose lines touch either marker is dropped entirely, and an
+unterminated `commentlint-off` disables the rest of the file. An HTML comment is the marker
+because it stays literal in every CommonMark context -- a fenced block, a table cell, a
+blockquote -- where a plain-text directive would either be swallowed as prose or need its own
+escaping rules.
+
 ## Tasks
 
 `task.py` is the dispatch point for working on the repository itself. `python task.py` on
