@@ -1,5 +1,11 @@
 # Comment Lint
 
+This little tool uses a small machine learning model to detect AI 
+slop prose in your codebase.  It was motivated by regressions in 
+Anthropic's Claude Opus 5 model in 2026.
+
+## Rules & Examples
+
 ## The commentlint command
 
 `bin/` holds two launchers that run the linter without naming an interpreter. `commentlint`
