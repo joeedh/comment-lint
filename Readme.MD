@@ -6,16 +6,25 @@ Anthropic's Claude Opus 5 model in 2026.
 
 ## Rules & Examples
 
-## The commentlint command
+## Installing
 
-`bin/` holds two launchers that run the linter without naming an interpreter. `commentlint`
-is the sh script and `commentlint.cmd` is its counterpart for cmd and PowerShell. Put that
-one directory on PATH and each shell picks up the launcher it can run.
+JS-project users can `npm install -g commentlint` (or add it as a project dependency).
+The npm package is a thin wrapper that manages its own Python venv under
+`~/.commentlint/pylib/`, built the first time it runs; `--install-deps` builds it up front
+and `--print-dep-dir` prints where it lives. A commentlint found in a project's own
+`node_modules` is used over a global install.
+
+From a checkout, `bin/` holds two launchers that run the linter without naming an
+interpreter. `commentlint` is the sh script and `commentlint.cmd` is its counterpart for
+cmd and PowerShell. Put that one directory on PATH and each shell picks up the launcher it
+can run.
 
 ```
 export PATH="$PATH:/path/to/commentlint/bin"        # bash
 $env:PATH += ';C:\path\to\commentlint\bin'          # PowerShell, this session only
 ```
+
+## The commentlint command
 
 ```
 commentlint src/            lint a tree
@@ -121,6 +130,9 @@ python task.py check       tests and types, the gate before a commit
 python task.py scan src/   lint a tree
 python task.py coverage    which rules the model can name, and its calibrated cuts
 python task.py clean       delete tool caches
+python task.py test-npm    exercise the npm wrapper end to end against an isolated HOME
+python task.py release     bump the version, tag git, publish source+model to a GitHub release
+python task.py publish-npm run `npm publish` from .npm-release/, and clean it up on success
 ```
 
 `check` runs every step even after one fails and exits with the worst code, so a type

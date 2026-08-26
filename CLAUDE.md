@@ -29,6 +29,13 @@
 * `bin/` holds the launchers an installed user runs: `commentlint` for sh and
   `commentlint.cmd` for cmd and PowerShell. Both are thin wrappers around predict.py, so
   a change to the CLI needs nothing done to them.
+* `npm/` holds the npm package (`commentlint` on the registry) that wraps predict.py in a
+  managed Python venv for JS-project users. `python task.py test-npm` exercises it end to
+  end against an isolated `HOME`, and runs automatically as part of `release`.
+  `python task.py release <major|minor|micro|X.Y.Z>` bumps the version, builds the source
+  zip and the npm release directory, tags git, pushes, and cuts a GitHub release;
+  `python task.py publish-npm` then runs `npm publish` from `.npm-release/` and deletes it
+  on success. See docs/plans/release-and-npm-distribution.md for the full design.
 
 ## Invariants
 * `cli.py` must not import `backends.py` at module scope. Importing scikit-learn costs
@@ -50,7 +57,14 @@
   written inside one reports the value from before the run.
 * `.gitattributes` pins `bin/commentlint` to LF and `bin/commentlint.cmd` to CRLF, and the
   sh launcher is committed executable. A CR on the shebang line leaves the script unrunnable
-  on any POSIX shell.
+  on any POSIX shell. `requirements-runtime.txt` is pinned to LF the same way, because the
+  npm wrapper hashes its exact bytes to key `~/.commentlint/pylib/<hash8>`, and `autocrlf`
+  normalizing it differently between a dev checkout and a release zip would split one
+  dependency set across two venv directories.
+* `requirements-runtime.txt` (scikit-learn, joblib, pathspec) is what the npm wrapper
+  installs into its managed venv; `requirements.txt` adds training/test/typecheck-only
+  deps on top via `-r requirements-runtime.txt`. A runtime dep that only training needs
+  bloats every end user's venv build.
 
 ## Comments 
 * Temporary non-doc comments must start with CLAUDENODE: for later stripping.
