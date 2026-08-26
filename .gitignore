@@ -9,3 +9,8 @@ train_v2.log
 train_gate.log
 .commentlint-cache/
 .pytest_cache/
+.npm-release/
+dist/
+node_modules/
+.commentlintrc.local.json
+.npm-test-scratch/

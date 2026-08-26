@@ -8,3 +8,4 @@ model_linear/*.joblib filter=lfs diff=lfs merge=lfs -text
 # and no POSIX shell will run it. Its cmd counterpart wants CRLF.
 bin/commentlint text eol=lf
 bin/commentlint.cmd text eol=crlf
+requirements-runtime.txt text eol=lf

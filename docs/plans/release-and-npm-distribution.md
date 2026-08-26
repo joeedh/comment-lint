@@ -1,6 +1,18 @@
 # Release task + npm distribution
 
-Status: planned
+Status: implemented
+
+Implementation note: `npm install` on Windows (npm 11.9) silently resolves a
+`workspaces` entry to zero workspaces -- no error, nothing installed -- when
+the workspace path has to cross back through the drive root to reach its
+target (a project under `C:\Users\...\AppData\Local\Temp` pointing at
+`C:\dev\commentlint\npm` reproduces it every time; the same target reached
+from a project a few levels under `C:\dev` does not). `test-npm`'s scratch
+project therefore lives under a gitignored `.npm-test-scratch/` next to
+`npm/` rather than in the OS temp directory, keeping the two paths' common
+ancestor close enough that the crossing never happens. The scratch `HOME`
+override is unaffected by this and stays wherever `tempfile.mkdtemp()` puts
+it.
 
 ## Context
 

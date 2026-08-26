@@ -1,0 +1,20 @@
+{
+  "name": "commentlint",
+  "version": "0.2.0",
+  "description": "Flag code comments that break a project's comment rules. Wraps the Python model in a self-managing venv.",
+  "bin": {
+    "commentlint": "bin/commentlint.js"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "vendor"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT"
+}

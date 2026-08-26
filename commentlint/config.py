@@ -13,6 +13,7 @@ import os
 from typing import Any
 
 CONFIG_NAME = ".commentlintrc.json"
+LOCAL_CONFIG_NAME = ".commentlintrc.local.json"
 
 KEYS: dict[str, type] = {
     "threshold": float,
@@ -25,6 +26,7 @@ KEYS: dict[str, type] = {
     "cacheStrategy": str,
     "backend": str,
     "model": str,
+    "npm": dict,
 }
 
 
@@ -76,4 +78,8 @@ def resolve(
         return {}, None
     if args.config and not os.path.isfile(path):
         raise ConfigError(f"{path}: no such file")
-    return load(path), path
+    data = load(path)
+    local_path = os.path.join(os.path.dirname(path), LOCAL_CONFIG_NAME)
+    if os.path.isfile(local_path):
+        data.update(load(local_path))
+    return data, path

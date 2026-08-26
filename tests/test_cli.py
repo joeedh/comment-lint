@@ -78,6 +78,21 @@ class TestConfig:
         (project / ".commentlintrc.json").write_text("{oops", encoding="utf-8")
         assert main([".", "--no-cache"]) == EXIT_USAGE
 
+    def test_npm_key_is_accepted_but_opaque(self, tmp_path):
+        p = tmp_path / ".commentlintrc.json"
+        p.write_text('{"npm": {"preferSystem": true}}', encoding="utf-8")
+        assert config_mod.load(str(p))["npm"] == {"preferSystem": True}
+
+    def test_local_override_merges_over_the_base_config(self, project, capsys):
+        (project / ".commentlintrc.json").write_text('{"threshold": 0.01}', encoding="utf-8")
+        (project / ".commentlintrc.local.json").write_text('{"threshold": 0.99}', encoding="utf-8")
+        _, out = run(["."], capsys)
+        assert "cut 0.99" in out
+
+    def test_local_override_is_only_looked_up_next_to_a_found_config(self, tmp_path):
+        (tmp_path / ".commentlintrc.local.json").write_text('{"threshold": 0.99}', encoding="utf-8")
+        assert config_mod.find(str(tmp_path)) is None
+
 
 class TestScanThreshold:
     """The scan cut travels with the model, because it is a per-model quantity.
