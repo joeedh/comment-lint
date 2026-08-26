@@ -64,6 +64,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--backend", choices=["linear", "encoder"])
     p.add_argument("--top", type=int, default=TOP_K, help=f"rules to name per finding (default {TOP_K})")
     p.add_argument("--json", action="store_true", dest="as_json", help="machine-readable output")
+    p.add_argument("--concise", action="store_true",
+                   help="print the line:col / rule / score table instead of the tsc-style default")
+    color = p.add_mutually_exclusive_group()
+    color.add_argument("--color", action="store_true", help="force colored output even when not a tty")
+    color.add_argument("--no-color", action="store_true", help="disable colored output")
     p.add_argument("--quiet", action="store_true", help="print only the summary")
     p.add_argument("--show-code", action="store_true", help="list commented-out code, not just count it")
     p.add_argument("--all", action="store_true", help="single-comment mode: every rule's probability")
@@ -476,21 +481,10 @@ def report(
         by_file = {}
         for p, f in shown:
             by_file.setdefault(p, []).append(f)
-        if by_file:
-            print("output format:")
-            print(f"  {'line:col':<12} {'rule':8s} {'score':>4}  comment")
-            print("    see rule details with: commentlint --list-rules")
-            print("\nErrors:")
-        for p, fs in by_file.items():
-            print(_rel(p))
-            for f in sorted(fs, key=lambda f: (f["line"], f["col"])):
-                tag = "code" if f["source"] == "heuristic" else f"{f['score']:.2f}"
-                head = f["text"].split("\n")[0]
-                pos = f"{f['line']}:{f['col']}"
-                if f["end_line"] != f["line"]:
-                    pos += f"-{f['end_line']}:{f['end_col']}"
-                print(f"  {pos:<12} {_display_rule(f['rule']):8s} {tag:>4}  {head[:64]}")
-            print()
+        if args.concise:
+            _print_concise(by_file)
+        else:
+            _print_ts(by_file, _use_color(args))
         if len(listed) > len(shown):
             print(f"... and {len(listed) - len(shown)} more not shown (--limit {opts.limit})\n")
 
@@ -506,6 +500,97 @@ def report(
         if len(skipped) > 5:
             print(f"  ... and {len(skipped) - 5} more")
     return EXIT_FINDINGS if total else EXIT_CLEAN
+
+
+def _enable_windows_ansi() -> bool:
+    """Turn on VT100 processing for the current console.
+
+    cmd.exe and older PowerShell hosts default this off, so an ANSI escape
+    prints as literal garbage rather than a color unless the console mode is
+    set first. Terminals that already understand ANSI (Windows Terminal,
+    ConPTY) tolerate the call as a no-op.
+    """
+    if os.name != "nt":
+        return True
+    try:
+        import ctypes
+
+        STD_OUTPUT_HANDLE = -11
+        ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
+        mode = ctypes.c_uint32()
+        if not kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+            return False
+        return bool(kernel32.SetConsoleMode(handle, mode.value | ENABLE_VIRTUAL_TERMINAL_PROCESSING))
+    except (OSError, AttributeError, ValueError):
+        return False
+
+
+def _use_color(args: argparse.Namespace) -> bool:
+    """Whether to emit ANSI color, honoring the user's own override first.
+
+    Absent an explicit --color/--no-color, this follows the NO_COLOR
+    convention (https://no-color.org/) and otherwise only colors a real
+    terminal -- a redirected or piped stdout gets plain text.
+    """
+    if args.no_color:
+        return False
+    if args.color:
+        return True
+    if os.environ.get("NO_COLOR"):
+        return False
+    if not sys.stdout.isatty():
+        return False
+    return _enable_windows_ansi()
+
+
+class _Colors:
+    def __init__(self, enabled: bool) -> None:
+        self.reset = "\x1b[0m" if enabled else ""
+        self.bold_red = "\x1b[1;31m" if enabled else ""
+        self.cyan = "\x1b[36m" if enabled else ""
+        self.dim = "\x1b[2m" if enabled else ""
+
+
+def _print_concise(by_file: dict[str, list[cache_mod.Finding]]) -> None:
+    if by_file:
+        print("output format:")
+        print(f"  {'startLine:startCol-endLine:endCol':<12} {'rule':8s} {'score':>4}  comment")
+        print("    see rule details with: commentlint --list-rules")
+        print("\nErrors:")
+    for p, fs in by_file.items():
+        print(_rel(p))
+        for f in sorted(fs, key=lambda f: (f["line"], f["col"])):
+            tag = "code" if f["source"] == "heuristic" else f"{f['score']:.2f}"
+            head = f["text"].split("\n")[0]
+            pos = f"{f['line']}:{f['col']}"
+            if f["end_line"] != f["line"]:
+                pos += f"-{f['end_line']}:{f['end_col']}"
+            print(f"  at {pos:<12} {_display_rule(f['rule']):8s} {tag:>4}  {head[:64]}")
+        print()
+
+
+def _print_ts(by_file: dict[str, list[cache_mod.Finding]], use_color: bool) -> None:
+    """tsc-style output: one 'path:line:col-line2:col2 - error ruleXX: desc' per finding.
+
+    The comment itself follows on an indented line, since the description
+    names the rule but not what specifically tripped it.
+    """
+    rule_desc = rules_mod.descriptions()
+    c = _Colors(use_color)
+    for p, fs in by_file.items():
+        rel = _rel(p)
+        for f in sorted(fs, key=lambda f: (f["line"], f["col"])):
+            pos = f"{f['line']}:{f['col']}"
+            if f["end_line"] != f["line"] or f["end_col"] != f["col"]:
+                pos += f"-{f['end_line']}:{f['end_col']}"
+            desc = rule_desc.get(f["rule"], "")
+            print(f"{c.bold_red}{rel}:{pos}{c.reset} - {c.bold_red}error{c.reset} "
+                  f"{c.cyan}{_display_rule(f['rule'])}{c.reset}: {desc}")
+            for line in f["text"].split("\n"):
+                print(f"{c.dim}    {line}{c.reset}")
+            print()
 
 
 def _display_rule(rule_id: str) -> str:
@@ -527,6 +612,16 @@ def _rel(path: str) -> str:
 
 def entry() -> None:
     try:
-        sys.exit(main())
+        code = main()
+        sys.stdout.flush()  # force the write here, where BrokenPipeError can still be caught
     except KeyboardInterrupt:
         sys.exit(EXIT_INTERNAL)
+    except BrokenPipeError:
+        # a downstream reader closing early (e.g. `| head`) is not a real
+        # failure; redirecting stdout's fd to devnull keeps Python's own
+        # atexit flush from raising the same error again on the way out
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, sys.stdout.fileno())
+        sys.exit(EXIT_INTERNAL)
+    else:
+        sys.exit(code)

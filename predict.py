@@ -17,9 +17,7 @@ independent detection.
 
 This file is a shim; the tool lives in the commentlint package.
 """
-import sys
-
-from commentlint.cli import main
+from commentlint.cli import entry
 
 if __name__ == "__main__":
-    sys.exit(main())
+    entry()
