@@ -20,6 +20,7 @@ from typing import Any
 from . import ENCODER_DIR, LINEAR_DIR, __version__
 from . import cache as cache_mod
 from . import config as config_mod
+from . import feedback as feedback_mod
 from . import rules as rules_mod
 from .comments import EXTENSIONS, UnparseableSource, extract_file
 from .comments import filters
@@ -61,6 +62,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--show-code", action="store_true", help="list commented-out code, not just count it")
     p.add_argument("--all", action="store_true", help="single-comment mode: every rule's probability")
     p.add_argument("--coverage", action="store_true", help="list which rules the model covers")
+    p.add_argument("--false-negative", metavar="COMMENT",
+                   help="record a comment the model wrongly passed; - reads it from stdin")
+    p.add_argument("--note", help="with --false-negative: why it should have been flagged")
+    p.add_argument("--revision", help="with --false-negative: how the comment should read instead")
+    p.add_argument("--ledger", help=f"where reports are appended (default ./{feedback_mod.LEDGER_NAME})")
     p.add_argument("--version", action="version", version=f"commentlint {__version__}")
     return p
 
@@ -125,6 +131,12 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_USAGE
     opts = Options(args, cfg)
 
+    if args.false_negative is not None:
+        return run_false_negative(args)
+    if args.note or args.revision:
+        print("commentlint: --note and --revision only apply with --false-negative", file=sys.stderr)
+        return EXIT_USAGE
+
     if args.coverage:
         return run_coverage(args, opts)
 
@@ -166,6 +178,39 @@ def run_single(text: str, args: argparse.Namespace, opts: Options) -> int:
         for rule_id, prob in ranked:
             print(f"  {rule_id:5s} {prob:.2f}  {rule_desc.get(rule_id, '')[:90]}")
     return EXIT_FINDINGS if (gate is not None and gate >= cut) else EXIT_CLEAN
+
+
+def run_false_negative(args: argparse.Namespace) -> int:
+    """Append one missed comment to the ledger and print where it landed.
+
+    Reporting a miss is not a finding, so this exits 0 even though the comment
+    is by assumption a violation. A caller scripting reports can then tell a
+    refused report from an accepted one by the exit code alone.
+    """
+    text = args.false_negative
+    if text == "-":
+        # PowerShell writes a BOM at the head of a UTF-8 pipe, and it would
+        # otherwise be stored as the first character of the comment
+        text = sys.stdin.read().lstrip("﻿")
+    if not text.strip():
+        print("commentlint: --false-negative needs the comment text", file=sys.stderr)
+        return EXIT_USAGE
+
+    path = args.ledger or feedback_mod.default_location()
+    record = feedback_mod.entry(text, note=args.note, revision=args.revision)
+    try:
+        total = feedback_mod.append(path, record)
+    except feedback_mod.LedgerError as e:
+        print(f"commentlint: {e}", file=sys.stderr)
+        return EXIT_USAGE
+
+    if args.as_json:
+        json.dump({"ledger": path, "entries": total, "recorded": record}, sys.stdout, indent=1)
+        print()
+    elif not args.quiet:
+        print(f"recorded a false negative in {_rel(path)} "
+              f"({total} entr{'y' if total == 1 else 'ies'})")
+    return EXIT_CLEAN
 
 
 def run_coverage(args: argparse.Namespace, opts: Options) -> int:

@@ -44,12 +44,13 @@ the cache sits where it does and why the module boundaries fall where they do.
 | Module | Responsibility |
 |---|---|
 | `commentlint/__init__.py` | Version, and paths resolved against the package rather than the working directory |
-| `commentlint/cli.py` | Argument parsing, config merge, the three run modes, output formatting, exit codes |
+| `commentlint/cli.py` | Argument parsing, config merge, the run modes, output formatting, exit codes |
 | `commentlint/discover.py` | Glob expansion and the pruning walk that decides which files exist for this run |
 | `commentlint/config.py` | `.commentlintrc.json` discovery, validation and merge |
 | `commentlint/cache.py` | Findings keyed on file stamp and a run key that hashes the model bytes |
 | `commentlint/backends.py` | The only module that imports scikit-learn or torch |
 | `commentlint/rules.py` | Rule descriptions and calibrated cuts, readable without loading a model |
+| `commentlint/feedback.py` | The false-negative ledger a user appends missed comments to |
 | `commentlint/comments/tsjs.py` | Character state machine over TS/JS source |
 | `commentlint/comments/pysrc.py` | `tokenize` for comments and `ast` for docstrings |
 | `commentlint/comments/normalize.py` | The transformation that has to match what the model was trained on |

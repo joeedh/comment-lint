@@ -17,6 +17,16 @@ commentlint "some comment"  score one comment
 commentlint --coverage      which rules the model can name
 ```
 
+Report a comment the model should have flagged and did not. The text, and any note or
+revision given with it, are appended to `.commentlint-feedback.json` in the working
+directory; `--ledger` writes somewhere else, and `-` as the comment reads it from stdin.
+
+```
+commentlint --false-negative "// the comment that passed" \
+            --note "why it should have been flagged" \
+            --revision "// how it should read instead"
+```
+
 Arguments and exit codes pass straight through to predict.py, so 1 still means findings and
 2 a bad argument. A `.venv` inside the checkout is used without being activated. Otherwise
 the launchers take the first python they find on PATH, and exit 127 if there is none.
