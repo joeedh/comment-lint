@@ -64,6 +64,7 @@ the cache sits where it does and why the module boundaries fall where they do.
 | `commentlint/feedback.py` | The false-negative ledger a user appends missed comments to |
 | `commentlint/comments/tsjs.py` | Character state machine over TS/JS source |
 | `commentlint/comments/pysrc.py` | `tokenize` for comments and `ast` for docstrings |
+| `commentlint/comments/markdown.py` | `markdown-it-py` for prose-bearing blocks, opt-in via `--markdown`/`markdownFiles` |
 | `commentlint/comments/normalize.py` | The transformation that has to match what the model was trained on |
 | `commentlint/comments/filters.py` | Which comments are prose worth scoring |
 

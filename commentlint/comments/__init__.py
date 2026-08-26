@@ -6,9 +6,10 @@ from .pysrc import UnparseableSource
 
 TSJS_EXT = {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"}
 PY_EXT = {".py", ".pyi"}
+MD_EXT = {".md", ".markdown"}
 EXTENSIONS = TSJS_EXT | PY_EXT
 
-__all__ = ["Comment", "UnparseableSource", "EXTENSIONS", "language_of", "extract", "extract_file"]
+__all__ = ["Comment", "UnparseableSource", "EXTENSIONS", "MD_EXT", "language_of", "extract", "extract_file"]
 
 
 def language_of(path: str) -> str | None:
@@ -17,6 +18,8 @@ def language_of(path: str) -> str | None:
         return "tsjs"
     if ext in PY_EXT:
         return "python"
+    if ext in MD_EXT:
+        return "markdown"
     return None
 
 
@@ -31,6 +34,10 @@ def extract(path: str, src: str) -> list[Comment]:
         from . import pysrc
 
         return pysrc.extract(path, src)
+    if lang == "markdown":
+        from . import markdown
+
+        return markdown.extract(path, src)
     return []
 
 

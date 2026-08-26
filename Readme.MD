@@ -60,7 +60,9 @@ option, with the same names the CLI flags use underneath their dashes:
   "cache": true,
   "cacheStrategy": "content",
   "backend": "linear",
-  "model": "./model_linear"
+  "model": "./model_linear",
+  "markdown": false,
+  "markdownFiles": ["CLAUDE.md"]
 }
 ```
 
@@ -69,6 +71,20 @@ typo in the config surfaces immediately instead of silently falling back to a de
 flag always wins over the matching config key, and `--config` points at a specific file when
 the nearest one found by upward search is not the one to use. `--no-config` skips the search
 entirely, scanning under CLI flags and built-in defaults alone.
+
+### Markdown
+
+commentlint does not scan `.md`/`.markdown` files by default. `--markdown` (or `"markdown":
+true` in config) opts a directory walk into them; `--markdown-file PATH` (or
+`"markdownFiles"`, repeatable/list) always checks specific files regardless of the walk, and
+when that list is non-empty it takes over from the walk-wide flag -- only the named files get
+checked, not the whole tree. A file named directly on the command line is always scanned, with
+or without either setting. `--markdown` combined with `--with-node-modules` also reaches every
+vendored `README.md` under `node_modules`.
+
+The shipped model was trained on code comments, not on prose against a style guide, so a
+markdown finding is a weaker signal than a code-comment one. It is tagged `"model-markdown"`
+and carries `"experimental": true` in `--json`, and a banner calls it out in the human report.
 
 ## Tasks
 

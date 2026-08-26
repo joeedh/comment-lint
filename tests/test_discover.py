@@ -125,6 +125,56 @@ class TestGlobs:
         assert split_glob("src/a.ts") == ("src/a.ts", None)
 
 
+class TestMarkdownExtraExtensions:
+    """`.md` stays out of an ordinary walk; `extra_extensions` is the opt-in."""
+
+    def test_md_is_invisible_to_an_ordinary_walk(self, repo, monkeypatch):
+        (repo / "docs.md").write_text("# doc\n", encoding="utf-8")
+        monkeypatch.chdir(repo)
+        found = {os.path.relpath(p, repo).replace("\\", "/") for p in discover(["."])}
+        assert "docs.md" not in found
+
+    def test_extra_extensions_picks_up_markdown_during_a_walk(self, repo, monkeypatch):
+        (repo / "docs.md").write_text("# doc\n", encoding="utf-8")
+        monkeypatch.chdir(repo)
+        found = {
+            os.path.relpath(p, repo).replace("\\", "/")
+            for p in discover([".", ], extra_extensions=frozenset({".md"}))
+        }
+        assert "docs.md" in found
+
+    def test_bare_md_named_on_argv_needs_no_enabler(self, repo, monkeypatch):
+        (repo / "README.md").write_text("# doc\n", encoding="utf-8")
+        monkeypatch.chdir(repo)
+        assert discover(["README.md"]) == ["README.md"]
+
+    def test_glob_is_not_scanned_without_the_enabler(self, repo, monkeypatch):
+        (repo / "README.md").write_text("# doc\n", encoding="utf-8")
+        monkeypatch.chdir(repo)
+        found = {os.path.relpath(p, repo).replace("\\", "/") for p in discover(["**/*.md"])}
+        assert found == set()
+
+    def test_glob_is_scanned_with_the_enabler(self, repo, monkeypatch):
+        (repo / "README.md").write_text("# doc\n", encoding="utf-8")
+        monkeypatch.chdir(repo)
+        found = {
+            os.path.relpath(p, repo).replace("\\", "/")
+            for p in discover(["**/*.md"], extra_extensions=frozenset({".md"}))
+        }
+        assert "README.md" in found
+
+    def test_with_node_modules_and_markdown_together_reach_vendored_md(self, repo, monkeypatch):
+        (repo / "node_modules" / "p" / "README.md").write_text("# doc\n", encoding="utf-8")
+        monkeypatch.chdir(repo)
+        found = {
+            os.path.relpath(p, repo).replace("\\", "/")
+            for p in discover(
+                ["."], with_node_modules=True, extra_extensions=frozenset({".md"})
+            )
+        }
+        assert "node_modules/p/README.md" in found
+
+
 class TestPathspecTrap:
     """A dir-only pattern only matches a query that carries its trailing slash."""
 

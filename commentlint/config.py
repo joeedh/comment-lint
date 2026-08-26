@@ -27,6 +27,8 @@ KEYS: dict[str, type] = {
     "backend": str,
     "model": str,
     "npm": dict,
+    "markdown": bool,
+    "markdownFiles": list,
 }
 
 
@@ -64,6 +66,8 @@ def load(path: str) -> dict[str, Any]:
             raise ConfigError(f"{path}: {key} must be {want.__name__}")
     if "model" in data:
         data["model"] = os.path.join(os.path.dirname(path), data["model"])
+    if "markdownFiles" in data:
+        data["markdownFiles"] = [os.path.join(os.path.dirname(path), p) for p in data["markdownFiles"]]
     return data
 
 

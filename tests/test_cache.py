@@ -110,6 +110,25 @@ def test_corrupt_cache_is_ignored_not_fatal(tree):
     assert make(tree, tree / "model").get(str(tree / "a.ts")) is None
 
 
+def test_markdown_flag_changes_the_run_key(tree):
+    """A stale zero-comments cache entry for a .md file must not survive turning markdown on."""
+    a = cache_mod.run_key(str(tree / "model"), {"cut": 0.7, "markdown": False, "markdown_files": ()})
+    b = cache_mod.run_key(str(tree / "model"), {"cut": 0.7, "markdown": True, "markdown_files": ()})
+    assert a != b
+
+
+def test_markdown_files_order_does_not_change_the_run_key(tree):
+    a = cache_mod.run_key(str(tree / "model"), {"cut": 0.7, "markdown_files": tuple(sorted(["b.md", "a.md"]))})
+    b = cache_mod.run_key(str(tree / "model"), {"cut": 0.7, "markdown_files": tuple(sorted(["a.md", "b.md"]))})
+    assert a == b
+
+
+def test_markdown_files_contents_still_change_the_run_key(tree):
+    a = cache_mod.run_key(str(tree / "model"), {"cut": 0.7, "markdown_files": ("a.md",)})
+    b = cache_mod.run_key(str(tree / "model"), {"cut": 0.7, "markdown_files": ("a.md", "b.md")})
+    assert a != b
+
+
 def test_cached_run_never_imports_sklearn(tmp_path):
     """The invariant the fast path rests on: sklearn's import alone is 2.41s.
 

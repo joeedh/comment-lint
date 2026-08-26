@@ -179,7 +179,7 @@ class TestScanOutput:
     def test_json_findings_carry_provenance(self, project, capsys):
         _, out = run([".", "--json", "--threshold", "0.01"], capsys)
         for f in [f for fl in json.loads(out)["files"] for f in fl["findings"]]:
-            assert f["source"] in ("model", "heuristic")
+            assert f["source"] in ("model", "model-markdown", "heuristic")
             assert {"line", "col", "rule", "score", "ranked", "text"} <= set(f)
 
     def test_limit_says_what_it_hid(self, project, capsys):
@@ -248,6 +248,69 @@ class TestBackendSelection:
         monkeypatch.setattr(backends, "load", lambda *a, **k: (Gateless(), {}, {}))
         assert main([".", "--backend", "encoder", "--no-cache"]) == EXIT_USAGE
         assert "cannot scan" in capsys.readouterr().err
+
+
+class TestMarkdown:
+    PROSE = "A paragraph long enough to be worth scoring, written as ordinary prose here.\n"
+
+    def test_bare_md_on_argv_needs_no_flag(self, project, capsys):
+        (project / "notes.md").write_text(self.PROSE, encoding="utf-8")
+        _, out = run(["notes.md", "--threshold", "0.01"], capsys)
+        assert "notes.md" in out or "0 findings" not in out
+
+    def test_directory_walk_ignores_md_by_default(self, project, capsys):
+        (project / "notes.md").write_text(self.PROSE, encoding="utf-8")
+        _, out = run([".", "--json", "--threshold", "0.01"], capsys)
+        data = json.loads(out)
+        assert not any(f["path"].endswith("notes.md") for f in data["files"])
+
+    def test_markdown_flag_enables_the_directory_walk(self, project, capsys):
+        (project / "notes.md").write_text(self.PROSE, encoding="utf-8")
+        _, out = run([".", "--markdown", "--json", "--threshold", "0.01"], capsys)
+        data = json.loads(out)
+        assert any(f["path"].endswith("notes.md") for f in data["files"])
+
+    def test_markdown_files_overrides_the_directory_walk_enabler(self, project, capsys):
+        (project / "docs").mkdir()
+        (project / "docs" / "other.md").write_text(self.PROSE, encoding="utf-8")
+        (project / "wanted.md").write_text(self.PROSE, encoding="utf-8")
+        _, out = run([
+            ".", "--markdown", "--markdown-file", "wanted.md",
+            "--json", "--threshold", "0.01",
+        ], capsys)
+        data = json.loads(out)
+        paths = {f["path"] for f in data["files"]}
+        assert any(p.endswith("wanted.md") for p in paths)
+        assert not any(p.endswith("other.md") for p in paths)
+
+    def test_missing_markdown_file_is_a_skip_not_a_crash(self, project, capsys):
+        code, out = run(["--markdown-file", "nope.md", "--threshold", "0.01"], capsys)
+        assert code != EXIT_USAGE
+        assert "nope.md" in out
+
+    def test_markdown_findings_are_tagged_and_experimental(self, project, capsys):
+        (project / "notes.md").write_text(self.PROSE, encoding="utf-8")
+        _, out = run(["notes.md", "--json", "--threshold", "0.01"], capsys)
+        data = json.loads(out)
+        findings = [f for fl in data["files"] for f in fl["findings"]]
+        assert findings
+        for f in findings:
+            assert f["source"] == "model-markdown"
+            assert f["experimental"] is True
+        assert data["summary"]["experimentalFindings"] == len(findings)
+
+    def test_markdown_findings_land_in_the_default_shown_bucket(self, project, capsys):
+        (project / "notes.md").write_text(self.PROSE, encoding="utf-8")
+        _, out = run(["notes.md", "--threshold", "0.01"], capsys)
+        assert "notes.md" in out
+
+    def test_banner_prints_only_when_a_markdown_finding_exists(self, project, capsys):
+        _, clean_out = run([".", "--threshold", "0.01"], capsys)
+        assert "experimental" not in clean_out
+
+        (project / "notes.md").write_text(self.PROSE, encoding="utf-8")
+        _, md_out = run(["notes.md", "--threshold", "0.01"], capsys)
+        assert "experimental" in md_out
 
 
 class TestParser:

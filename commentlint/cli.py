@@ -22,7 +22,7 @@ from . import cache as cache_mod
 from . import config as config_mod
 from . import feedback as feedback_mod
 from . import rules as rules_mod
-from .comments import EXTENSIONS, UnparseableSource, extract_file
+from .comments import EXTENSIONS, MD_EXT, UnparseableSource, extract_file
 from .comments import filters
 from .comments.base import Comment
 from .discover import discover
@@ -48,6 +48,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--ignore-path", action="append", default=[], metavar="FILE",
                    help="extra ignore file; repeatable")
     p.add_argument("--with-node-modules", action="store_true", help="do not skip node_modules")
+    p.add_argument("--markdown", action="store_true",
+                   help="pick up .md/.markdown files during directory walks (combined with "
+                        "--with-node-modules, this also scans vendored markdown)")
+    p.add_argument("--markdown-file", action="append", default=[], dest="markdown_files", metavar="PATH",
+                   help="always check this markdown file, regardless of --markdown; repeatable")
     p.add_argument("--no-cache", action="store_true", help="do not read or write the cache")
     p.add_argument("--cache-location", help="where the cache lives")
     p.add_argument("--cache-strategy", choices=["metadata", "content"], help="default metadata")
@@ -90,6 +95,8 @@ class Options:
         self.exclude = list(args.exclude) + list(cfg.get("exclude", []))
         self.ignore_path = list(args.ignore_path) + list(cfg.get("ignorePath", []))
         self.with_node_modules = pick("with_node_modules", "withNodeModules", False)
+        self.markdown = pick("markdown", "markdown", False)
+        self.markdown_files = list(args.markdown_files) + list(cfg.get("markdownFiles", []))
         self.cache = False if args.no_cache else cfg.get("cache", True)
         self.cache_strategy = pick("cache_strategy", "cacheStrategy", "metadata")
         self.backend = pick("backend", "backend", None)
@@ -272,11 +279,26 @@ def run_scan(args: argparse.Namespace, opts: Options) -> int:
     started = time.time()
     skipped: list[tuple[str, str]] = []
 
+    # a stale markdownFiles entry is not the user's typo on argv, so it is
+    # reported as a skip rather than raised through discover() and aborting
+    # the whole run
+    markdown_files = []
+    for p in opts.markdown_files:
+        if os.path.isfile(p):
+            markdown_files.append(p)
+        else:
+            skipped.append((p, "no such file"))
+
+    # markdownFiles' presence overrides the directory-walk enabler: a repo
+    # that lists specific files does not also want the whole tree opted in
+    extra_extensions = frozenset(MD_EXT) if (opts.markdown and not opts.markdown_files) else frozenset()
+
     try:
         files = discover(
-            args.paths, exclude=opts.exclude, ignore_path=opts.ignore_path,
+            list(args.paths) + markdown_files, exclude=opts.exclude, ignore_path=opts.ignore_path,
             with_node_modules=opts.with_node_modules,
             on_skip=lambda p, why: skipped.append((p, why)),
+            extra_extensions=extra_extensions,
         )
     except FileNotFoundError as e:
         print(f"commentlint: no such file or directory: {e}", file=sys.stderr)
@@ -292,6 +314,8 @@ def run_scan(args: argparse.Namespace, opts: Options) -> int:
         cache_mod.run_key(opts.fingerprint_dir, {
             "cut": cut, "min_length": opts.min_length,
             "backend": opts.backend, "top": args.top,
+            "markdown": opts.markdown,
+            "markdown_files": tuple(sorted(opts.markdown_files)),
         }),
         strategy=opts.cache_strategy,
         enabled=opts.cache,
@@ -319,7 +343,9 @@ def run_scan(args: argparse.Namespace, opts: Options) -> int:
             continue
         counts[path] = len(comments)
         for c in comments:
-            verdict = filters.classify(c) if len(c.text) >= opts.min_length else "skip"
+            if len(c.text) < opts.min_length:
+                continue
+            verdict = filters.classify_markdown(c.text) if c.kind == "prose" else filters.classify(c)
             if verdict == "skip":
                 continue
             if verdict == "code":
@@ -345,7 +371,15 @@ def run_scan(args: argparse.Namespace, opts: Options) -> int:
                 continue
             order = sorted(range(len(probs)), key=lambda i: -probs[i])[: args.top]
             ranked = [(backend.labels[i], probs[i]) for i in order]
-            per_file[path].append(_finding(c, ranked[0][0], gate, ranked, "model"))  # type: ignore[arg-type]
+            # markdown prose reaches the code-comment gate and rule heads, but
+            # nobody trained them on prose, so the finding is tagged distinctly
+            # and marked experimental rather than presented as an equal-confidence
+            # code-comment violation
+            source = "model-markdown" if c.kind == "prose" else "model"
+            finding = _finding(c, ranked[0][0], gate, ranked, source)  # type: ignore[arg-type]
+            if source == "model-markdown":
+                finding["experimental"] = True
+            per_file[path].append(finding)
 
     for path in fresh:
         cache.put(path, per_file.get(path, []), counts.get(path, 0))
@@ -391,13 +425,15 @@ def report(
 
     # a heuristic's confidence and a model probability are different quantities,
     # so one ranking over both lets commented-out code bury the prose findings
+    MODEL_SOURCES = ("model", "model-markdown")
     prose = sorted(
-        [pf for pf in flat if pf[1]["source"] == "model"],
+        [pf for pf in flat if pf[1]["source"] in MODEL_SOURCES],
         key=lambda pf: (-pf[1]["score"], pf[0], pf[1]["line"]),
     )
-    code = sorted([pf for pf in flat if pf[1]["source"] != "model"], key=lambda pf: (pf[0], pf[1]["line"]))
+    code = sorted([pf for pf in flat if pf[1]["source"] not in MODEL_SOURCES], key=lambda pf: (pf[0], pf[1]["line"]))
     listed = prose + code if args.show_code else prose
     shown = listed if opts.limit is None or opts.limit <= 0 else listed[: opts.limit]
+    n_experimental = sum(1 for _, f in flat if f.get("experimental"))
 
     if args.as_json:
         by_file: dict[str, list[cache_mod.Finding]] = {}
@@ -411,10 +447,15 @@ def report(
                 "findings": total, "comments": n_comments, "cachedFiles": n_cached,
                 "threshold": cut, "elapsed": round(elapsed, 3),
                 "skipped": [{"path": p, "reason": r} for p, r in skipped],
+                "experimentalFindings": n_experimental,
             },
         }, sys.stdout, indent=1)
         print()
         return EXIT_FINDINGS if total else EXIT_CLEAN
+
+    if n_experimental:
+        print(f"{n_experimental} markdown findings use the code-comment model and are "
+              f"unvalidated for prose style; treat as experimental\n")
 
     if not args.quiet:
         by_file = {}

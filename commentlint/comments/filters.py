@@ -90,3 +90,13 @@ def classify(comment: "Comment") -> str:
     if looks_like_code(text):
         return "code"
     return "prose"
+
+
+def classify_markdown(text: str) -> str:
+    """Return `prose` or `skip` for one extracted markdown block.
+
+    None of `classify`'s heuristics describe markdown -- there is no comment
+    delimiter to mistake for a directive, and a fenced block is already
+    excluded at extraction, so length is the only filter.
+    """
+    return "skip" if len(text) < MIN_LEN else "prose"

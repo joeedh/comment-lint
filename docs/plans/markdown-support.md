@@ -1,6 +1,6 @@
 # Markdown support for commentlint
 
-**Status: proposed.**
+**Status: implemented.**
 
 ## Context
 

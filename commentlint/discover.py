@@ -82,8 +82,10 @@ def walk(
     with_node_modules: bool = False,
     pattern: PatternSpec | None = None,
     on_skip: OnSkip | None = None,
+    extra_extensions: frozenset[str] = frozenset(),
 ) -> Iterator[str]:
     """Yield scannable files under `root`, pruning ignored directories."""
+    exts = EXTENSIONS | extra_extensions
     spec = load_ignore_files(root)
     if spec is not None:
         ignores = ignores.pushed(root, spec)
@@ -109,10 +111,10 @@ def walk(
                 continue
             if ignores.ignored(entry.path, True):
                 continue
-            yield from walk(entry.path, ignores, with_node_modules, pattern, on_skip)
+            yield from walk(entry.path, ignores, with_node_modules, pattern, on_skip, extra_extensions)
             continue
 
-        if os.path.splitext(name)[1].lower() not in EXTENSIONS:
+        if os.path.splitext(name)[1].lower() not in exts:
             continue
         if ignores.ignored(entry.path, False):
             continue
@@ -144,6 +146,7 @@ def discover(
     ignore_path: Sequence[str] = (),
     with_node_modules: bool = False,
     on_skip: OnSkip | None = None,
+    extra_extensions: frozenset[str] = frozenset(),
 ) -> list[str]:
     """Every file to scan, de-duplicated and in stable order."""
     base_layers: list[Layer] = []
@@ -179,13 +182,13 @@ def discover(
                 continue
             if not os.path.isdir(arg):
                 raise FileNotFoundError(arg)
-            for found_path in walk(arg, rooted(arg), with_node_modules, None, on_skip):
+            for found_path in walk(arg, rooted(arg), with_node_modules, None, on_skip, extra_extensions):
                 add(found_path)
             continue
         if not os.path.isdir(base):
             continue
         pat = (os.path.abspath(base), _spec([pattern]))
-        for found_path in walk(base, rooted(base), with_node_modules, pat, on_skip):
+        for found_path in walk(base, rooted(base), with_node_modules, pat, on_skip, extra_extensions):
             add(found_path)
 
     return out
