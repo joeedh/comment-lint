@@ -1,5 +1,6 @@
 """Config resolution, argument disambiguation, output shapes and exit codes."""
 import json
+import subprocess
 
 import pytest
 
@@ -94,6 +95,58 @@ class TestConfig:
     def test_local_override_is_only_looked_up_next_to_a_found_config(self, tmp_path):
         (tmp_path / ".commentlintrc.local.json").write_text('{"threshold": 0.99}', encoding="utf-8")
         assert config_mod.find(str(tmp_path)) is None
+
+    def test_extends_inherits_the_parent_config(self, tmp_path):
+        (tmp_path / "base.json").write_text('{"threshold": 0.5, "limit": 3}', encoding="utf-8")
+        child = tmp_path / ".commentlintrc.json"
+        child.write_text('{"extends": "base.json"}', encoding="utf-8")
+        cfg = config_mod.load(str(child))
+        assert cfg["threshold"] == 0.5
+        assert cfg["limit"] == 3
+        assert "extends" not in cfg
+
+    def test_extends_child_key_wins_over_parent(self, tmp_path):
+        (tmp_path / "base.json").write_text('{"threshold": 0.5}', encoding="utf-8")
+        child = tmp_path / ".commentlintrc.json"
+        child.write_text('{"extends": "base.json", "threshold": 0.9}', encoding="utf-8")
+        assert config_mod.load(str(child))["threshold"] == 0.9
+
+    def test_extends_resolves_relative_to_the_child_directory(self, tmp_path):
+        sub = tmp_path / "sub"
+        sub.mkdir()
+        (tmp_path / "base.json").write_text('{"threshold": 0.5}', encoding="utf-8")
+        child = sub / ".commentlintrc.json"
+        child.write_text('{"extends": "../base.json"}', encoding="utf-8")
+        assert config_mod.load(str(child))["threshold"] == 0.5
+
+    def test_extends_missing_file_is_an_error(self, tmp_path):
+        child = tmp_path / ".commentlintrc.json"
+        child.write_text('{"extends": "missing.json"}', encoding="utf-8")
+        with pytest.raises(config_mod.ConfigError, match="missing.json"):
+            config_mod.load(str(child))
+
+    def test_extends_cycle_is_an_error(self, tmp_path):
+        a = tmp_path / "a.json"
+        b = tmp_path / "b.json"
+        a.write_text('{"extends": "b.json"}', encoding="utf-8")
+        b.write_text('{"extends": "a.json"}', encoding="utf-8")
+        with pytest.raises(config_mod.ConfigError, match="cycle"):
+            config_mod.load(str(a))
+
+    def test_extends_repo_root_prefix_resolves_against_git_toplevel(self, tmp_path):
+        subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+        (tmp_path / "shared.json").write_text('{"threshold": 0.7}', encoding="utf-8")
+        sub = tmp_path / "a" / "b"
+        sub.mkdir(parents=True)
+        child = sub / ".commentlintrc.json"
+        child.write_text('{"extends": "//shared.json"}', encoding="utf-8")
+        assert config_mod.load(str(child))["threshold"] == 0.7
+
+    def test_extends_repo_root_prefix_outside_a_repo_is_an_error(self, tmp_path):
+        child = tmp_path / ".commentlintrc.json"
+        child.write_text('{"extends": "//shared.json"}', encoding="utf-8")
+        with pytest.raises(config_mod.ConfigError, match="git repository"):
+            config_mod.load(str(child))
 
 
 class TestScanThreshold:

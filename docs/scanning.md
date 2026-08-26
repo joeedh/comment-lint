@@ -85,8 +85,14 @@ overrides it. One config per run — there are no per-file `overrides`.
 ```
 
 Keys: `threshold` `limit` `minLength` `exclude` `ignorePath` `withNodeModules` `cache`
-`cacheStrategy` `backend` `model` `disableRules` `enableRules`. An unknown key is an error,
-not a shrug.
+`cacheStrategy` `backend` `model` `disableRules` `enableRules` `extends`. An unknown key is
+an error, not a shrug.
+
+`extends` names a parent config to inherit from, with this config's own keys applied over
+it. A plain path resolves relative to the config file's own directory, the same as `model`
+and `markdownFiles`. A `//`-prefixed path resolves against the git repository root instead
+(Bazel's convention for a workspace-root label), for a shared config kept elsewhere in the
+tree: `"extends": "//configs/.commentlintrc.json"`.
 
 `disableRules` is a list of rule ids (`C10`, `P9`, ...) that are never reported. The gate
 that decides whether a comment is flagged still runs over every rule, so disabling one only
