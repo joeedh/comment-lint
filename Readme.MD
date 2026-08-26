@@ -31,6 +31,34 @@ Arguments and exit codes pass straight through to predict.py, so 1 still means f
 2 a bad argument. A `.venv` inside the checkout is used without being activated. Otherwise
 the launchers take the first python they find on PATH, and exit 127 if there is none.
 
+## Config
+
+commentlint reads `.commentlintrc.json` the way prettier reads its config: it searches
+upward from the working directory and the nearest file wins, so a subdirectory can override
+a repository-wide default just by holding its own copy. A single JSON object holds every
+option, with the same names the CLI flags use underneath their dashes:
+
+```json
+{
+  "threshold": 0.6,
+  "limit": 100,
+  "minLength": 20,
+  "exclude": ["vendor/**"],
+  "ignorePath": [".gitignore"],
+  "withNodeModules": false,
+  "cache": true,
+  "cacheStrategy": "content",
+  "backend": "linear",
+  "model": "./model_linear"
+}
+```
+
+An unknown key or a value of the wrong type fails the run rather than being ignored, so a
+typo in the config surfaces immediately instead of silently falling back to a default. A CLI
+flag always wins over the matching config key, and `--config` points at a specific file when
+the nearest one found by upward search is not the one to use. `--no-config` skips the search
+entirely, scanning under CLI flags and built-in defaults alone.
+
 ## Tasks
 
 `task.py` is the dispatch point for working on the repository itself. `python task.py` on
