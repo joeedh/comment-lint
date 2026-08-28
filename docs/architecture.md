@@ -1,7 +1,7 @@
 # Architecture
 
 commentlint reads source files, pulls the prose comments out of them, and scores each one
-against a taxonomy of 25 comment rules held in data/rules.json. It runs locally and makes no
+against a taxonomy of 26 comment rules held in data/rules.json. It runs locally and makes no
 network calls. The output is a ranked list of suspect comments with an exit code, in the shape
 a linter produces.
 
@@ -38,8 +38,9 @@ paths and globs
 comments/         extract every comment, normalize it to the training text shape
       |
       v
-comments/filters  drop directives, license headers and short fragments;
-      |           divert commented-out code to a C2 finding without scoring it
+comments/filters  drop directives, license headers and short fragments; divert
+      |           commented-out code to C2 without scoring; divert a
+      |           remaining prose comment with non-Latin-1 characters to C13
       v
  backends.py      one batched forward pass: gate probability plus per-rule probabilities
       |
@@ -61,6 +62,7 @@ the cache sits where it does and why the module boundaries fall where they do.
 | `commentlint/cache.py` | Findings keyed on file stamp and a run key that hashes the model bytes |
 | `commentlint/backends.py` | The only module that imports scikit-learn or torch |
 | `commentlint/rules.py` | Rule descriptions and calibrated cuts, readable without loading a model |
+| `commentlint/unicode_whitelist.py` | Parses rule C13's `unicodeWhitelist` config entries and tests codepoint membership |
 | `commentlint/feedback.py` | The false-negative ledger a user appends missed comments to |
 | `commentlint/comments/tsjs.py` | Character state machine over TS/JS source |
 | `commentlint/comments/pysrc.py` | `tokenize` for comments and `ast` for docstrings |
@@ -190,8 +192,9 @@ Gate evaluation drops the corrected-version rows through `realistic_mask`. Those
 contrastive negatives during training and adversarial near-duplicates during evaluation, since a
 comment someone already fixed is not a thing the tool meets in the wild.
 
-Of the 25 rules in the taxonomy, 16 have enough positives to train. Six have none at all: C1, C2,
-C3, C5, C6 and C10.
+Of the 26 rules in the taxonomy, 16 have enough positives to train. Seven have none at all: C1,
+C2, C3, C5, C6, C10 and C13 -- the last two are non-model rules by design, not just short on
+examples.
 
 ## Tests
 

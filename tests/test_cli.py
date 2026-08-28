@@ -1,5 +1,6 @@
 """Config resolution, argument disambiguation, output shapes and exit codes."""
 import json
+import re
 import subprocess
 
 import pytest
@@ -56,6 +57,35 @@ class TestConfig:
         p.write_text("{oops", encoding="utf-8")
         with pytest.raises(config_mod.ConfigError):
             config_mod.load(str(p))
+
+    def test_line_comments_are_ignored(self, tmp_path):
+        p = tmp_path / ".commentlintrc.json"
+        p.write_text(
+            '// leading comment\n'
+            '{\n'
+            '  "threshold": 0.5, // trailing comment\n'
+            '  "exclude": ["http://example.com"]\n'
+            '}\n',
+            encoding="utf-8",
+        )
+        cfg = config_mod.load(str(p))
+        assert cfg["threshold"] == 0.5
+        assert cfg["exclude"] == ["http://example.com"]
+
+    def test_block_comments_are_ignored(self, tmp_path):
+        p = tmp_path / ".commentlintrc.json"
+        p.write_text(
+            '/* leading\n'
+            '   comment */\n'
+            '{ "threshold": /* inline */ 0.5 }\n',
+            encoding="utf-8",
+        )
+        assert config_mod.load(str(p))["threshold"] == 0.5
+
+    def test_comment_like_text_inside_a_string_is_preserved(self, tmp_path):
+        p = tmp_path / ".commentlintrc.json"
+        p.write_text('{ "model": "not // a comment /* either */" }', encoding="utf-8")
+        assert config_mod.load(str(p))["model"].endswith("not // a comment /* either */")
 
     def test_model_path_resolves_against_the_config(self, tmp_path):
         p = tmp_path / ".commentlintrc.json"
@@ -147,6 +177,25 @@ class TestConfig:
         child.write_text('{"extends": "//shared.json"}', encoding="utf-8")
         with pytest.raises(config_mod.ConfigError, match="git repository"):
             config_mod.load(str(child))
+
+
+class TestUnicodeWhitelistConfig:
+    def test_hex_codepoint_and_range_load_cleanly(self, tmp_path):
+        p = tmp_path / ".commentlintrc.json"
+        p.write_text('{"unicodeWhitelist": ["U+2014", "U+2018-U+201F"]}', encoding="utf-8")
+        assert config_mod.load(str(p))["unicodeWhitelist"] == ["U+2014", "U+2018-U+201F"]
+
+    def test_malformed_entry_is_an_error(self, tmp_path):
+        p = tmp_path / ".commentlintrc.json"
+        p.write_text('{"unicodeWhitelist": ["not a codepoint"]}', encoding="utf-8")
+        with pytest.raises(config_mod.ConfigError, match="unicodeWhitelist"):
+            config_mod.load(str(p))
+
+    def test_backwards_range_is_an_error(self, tmp_path):
+        p = tmp_path / ".commentlintrc.json"
+        p.write_text('{"unicodeWhitelist": ["U+2015-U+2010"]}', encoding="utf-8")
+        with pytest.raises(config_mod.ConfigError, match="after its end"):
+            config_mod.load(str(p))
 
 
 class TestScanThreshold:
@@ -446,3 +495,85 @@ class TestEnableRules:
     def test_list_rules_marks_default_disabled_rules(self, capsys):
         _, out = run(["--list-rules"], capsys)
         assert "ruleC10  non-doc-comment-slashes (disabled)" in out
+
+
+class TestUnicodeRule:
+    TEXT = "// This particular sentence contains an em dash — right in the middle of it.\n"
+
+    def test_disabled_by_default(self, project, capsys):
+        (project / "u.ts").write_text(self.TEXT, encoding="utf-8")
+        _, out = run([".", "--threshold", "0.99"], capsys)
+        assert "ruleC13" not in out
+
+    def test_enable_rule_flag_reports_it(self, project, capsys):
+        (project / "u.ts").write_text(self.TEXT, encoding="utf-8")
+        _, out = run([".", "--threshold", "0.99", "--enable-rule", "C13"], capsys)
+        assert "ruleC13" in out
+        assert "non-Latin-1: U+2014" in out
+
+    def test_enable_rule_via_config_also_works(self, project, capsys):
+        (project / "u.ts").write_text(self.TEXT, encoding="utf-8")
+        (project / ".commentlintrc.json").write_text('{"enableRules": ["C13"]}', encoding="utf-8")
+        _, out = run([".", "--threshold", "0.99"], capsys)
+        assert "ruleC13" in out
+
+    def test_whitelisted_codepoint_is_not_flagged(self, project, capsys):
+        (project / "u.ts").write_text(self.TEXT, encoding="utf-8")
+        (project / ".commentlintrc.json").write_text(
+            '{"enableRules": ["C13"], "unicodeWhitelist": ["U+2014"]}', encoding="utf-8")
+        _, out = run([".", "--threshold", "0.99"], capsys)
+        assert "ruleC13" not in out
+
+    def test_disable_wins_over_enable(self, project, capsys):
+        (project / "u.ts").write_text(self.TEXT, encoding="utf-8")
+        _, out = run([".", "--threshold", "0.99", "--enable-rule", "C13", "--disable-rule", "C13"], capsys)
+        assert "ruleC13" not in out
+
+    def test_json_finding_carries_codepoints_and_heuristic_source(self, project, capsys):
+        (project / "u.ts").write_text(self.TEXT, encoding="utf-8")
+        _, out = run([".", "--json", "--threshold", "0.99", "--enable-rule", "C13"], capsys)
+        findings = [f for fl in json.loads(out)["files"] for f in fl["findings"]]
+        finding = next(f for f in findings if f["rule"] == "C13")
+        assert finding["codepoints"] == ["U+2014"]
+        assert finding["source"] == "heuristic"
+
+    def test_concise_tag_is_not_a_fake_score(self, project, capsys):
+        (project / "u.ts").write_text(self.TEXT, encoding="utf-8")
+        _, out = run([".", "--threshold", "0.99", "--enable-rule", "C13", "--concise"], capsys)
+        assert "1.00" not in out
+        assert "flag" in out
+
+    def test_commented_out_code_with_bad_unicode_stays_c2(self, project, capsys):
+        # C2 (delete this code) takes priority over C13 for a comment that is
+        # both: reporting it under only one of the two rules that fire on it,
+        # not silently dropping the other.
+        code = '// const label = "a—b"; doSomethingUseful(label, extra);\n'
+        (project / "u.ts").write_text(code, encoding="utf-8")
+        _, out = run([".", "--threshold", "0.01", "--show-code", "--enable-rule", "C13"], capsys)
+        assert "ruleC2" in out
+        assert "ruleC13" not in out
+
+
+class TestInit:
+    def test_writes_a_default_config(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.chdir(tmp_path)
+        code = main(["--init"])
+        assert code == EXIT_CLEAN
+        assert (tmp_path / ".commentlintrc.json").exists()
+        assert "wrote" in capsys.readouterr().out
+
+    def test_refuses_to_overwrite_an_existing_config(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.chdir(tmp_path)
+        main(["--init"])
+        code = main(["--init"])
+        assert code == EXIT_USAGE
+        assert "already exists" in capsys.readouterr().err
+
+    def test_written_config_parses_to_an_empty_dict(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        main(["--init"])
+        assert config_mod.load(str(tmp_path / ".commentlintrc.json")) == {}
+
+    def test_every_config_key_appears_commented_out(self):
+        keys_in_template = set(re.findall(r'// "(\w+)":', config_mod.DEFAULT_CONFIG))
+        assert keys_in_template == set(config_mod.KEYS)

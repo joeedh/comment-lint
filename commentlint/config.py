@@ -7,6 +7,9 @@ threshold, and per-file config would make the single cache key impossible.
 That per-file resolution is also the only reason prettier needs `overrides`,
 so there is none of that either.
 
+The file is JSON with `//` and `/* */` comments allowed outside string
+literals, stripped before parsing.
+
 A config can name a parent via `extends`, resolved relative to its own
 directory the same way `model` and `markdownFiles` are, with the child's own
 keys applied over the parent's. `extends` also accepts a `//`-prefixed path,
@@ -21,6 +24,7 @@ import subprocess
 from typing import Any
 
 from . import rules as rules_mod
+from . import unicode_whitelist
 
 CONFIG_NAME = ".commentlintrc.json"
 LOCAL_CONFIG_NAME = ".commentlintrc.local.json"
@@ -42,6 +46,7 @@ KEYS: dict[str, type] = {
     "markdownFiles": list,
     "disableRules": list,
     "enableRules": list,
+    "unicodeWhitelist": list,
     "extends": str,
 }
 
@@ -83,13 +88,62 @@ def _resolve_reference(path: str, reference: str) -> str:
     return os.path.join(os.path.dirname(path), reference)
 
 
+def _strip_json_comments(text: str) -> str:
+    """Blank out `//` and `/* */` comments that fall outside string literals.
+
+    Each stripped character is replaced with a space, and newlines are kept
+    as newlines, so a json.JSONDecodeError raised against the result still
+    points at the same line and column as the source.
+    """
+    out = []
+    i, n = 0, len(text)
+    in_string = False
+    escape = False
+    while i < n:
+        c = text[i]
+        if in_string:
+            out.append(c)
+            if escape:
+                escape = False
+            elif c == "\\":
+                escape = True
+            elif c == '"':
+                in_string = False
+            i += 1
+            continue
+        if c == '"':
+            in_string = True
+            out.append(c)
+            i += 1
+            continue
+        if c == "/" and i + 1 < n and text[i + 1] == "/":
+            while i < n and text[i] != "\n":
+                out.append(" ")
+                i += 1
+            continue
+        if c == "/" and i + 1 < n and text[i + 1] == "*":
+            out.append("  ")
+            i += 2
+            while i < n and not (text[i] == "*" and i + 1 < n and text[i + 1] == "/"):
+                out.append("\n" if text[i] == "\n" else " ")
+                i += 1
+            if i < n:
+                out.append("  ")
+                i += 2
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
 def load(path: str, _seen: frozenset[str] = frozenset()) -> dict[str, Any]:
     path = os.path.abspath(path)
     if path in _seen:
         raise ConfigError(f"{path}: extends cycle")
     try:
         with open(path, encoding="utf-8") as f:
-            data: dict[str, Any] = json.load(f)
+            text = f.read()
+        data: dict[str, Any] = json.loads(_strip_json_comments(text))
     except (OSError, json.JSONDecodeError) as e:
         raise ConfigError(f"{path}: {e}") from e
     if not isinstance(data, dict):
@@ -109,6 +163,11 @@ def load(path: str, _seen: frozenset[str] = frozenset()) -> dict[str, Any]:
         unknown_rules = sorted(set(data["enableRules"]) - rules_mod.known_ids())
         if unknown_rules:
             raise ConfigError(f"{path}: unknown rule id(s) in enableRules: {', '.join(unknown_rules)}")
+    if "unicodeWhitelist" in data:
+        try:
+            unicode_whitelist.parse(data["unicodeWhitelist"])
+        except unicode_whitelist.WhitelistError as e:
+            raise ConfigError(f"{path}: unicodeWhitelist: {e}") from e
     if "model" in data:
         data["model"] = _resolve_reference(path, data["model"])
     if "markdownFiles" in data:
@@ -139,3 +198,84 @@ def resolve(
     if os.path.isfile(local_path):
         data.update(load(local_path))
     return data, path
+
+
+# Every key in KEYS, commented out, with an explanation above it. A test
+# checks the key set here against KEYS so the two cannot drift.
+DEFAULT_CONFIG = """{
+  // Gate cut: a comment scoring at or above this is reported. Omit to use
+  // the model's own calibrated cut, which is what most projects should run.
+  // "threshold": 0.6,
+
+  // Most findings to print; the rest are still counted. Omit for no limit.
+  // "limit": 100,
+
+  // Skip comments shorter than this many characters.
+  // "minLength": 40,
+
+  // Extra gitignore-style patterns to skip, on top of .gitignore and
+  // .commentlintignore.
+  // "exclude": ["vendor/**", "**/generated/**"],
+
+  // Extra ignore files to read, beyond .gitignore and .commentlintignore.
+  // "ignorePath": [".gitignore"],
+
+  // Scan node_modules too. Off by default.
+  // "withNodeModules": false,
+
+  // Cache findings between runs, keyed on file stamp and the model's bytes.
+  // "cache": true,
+
+  // "metadata" trusts mtime and size; "content" hashes file contents
+  // instead, which is slower but survives a checkout that skips mtimes.
+  // "cacheStrategy": "metadata",
+
+  // Which backend scores comments: "linear" (what ships) or "encoder".
+  // "backend": "linear",
+
+  // Model directory to load, resolved relative to this file. A
+  // "//"-prefixed path resolves from the git repository root instead.
+  // "model": "./model_linear",
+
+  // Scan .md/.markdown files during directory walks. The shipped model was
+  // trained on code comments, so a markdown finding is reported as
+  // experimental.
+  // "markdown": false,
+
+  // Always check these markdown files, regardless of "markdown". Once this
+  // is non-empty it replaces the directory walk: only the named files are
+  // checked, not the whole tree.
+  // "markdownFiles": ["CLAUDE.md"],
+
+  // Rule ids never to report. The gate that decides whether a comment is
+  // flagged at all still runs over every rule; disabling one only changes
+  // which rule a finding is named after.
+  // "disableRules": [],
+
+  // Rule ids to turn back on even though they ship off by default (C10,
+  // C11, C13 -- style calls the taxonomy can't settle for every codebase).
+  // "enableRules": [],
+
+  // Codepoints and ranges that rule C13 (no non-Latin-1 characters in a
+  // comment) lets through. Each entry is either "U+XXXX" for one codepoint
+  // or "U+XXXX-U+YYYY" for an inclusive range. C13 ships off by default, so
+  // this only matters once it is turned on with enableRules.
+  // "unicodeWhitelist": ["U+2018-U+201F"],
+
+  // Inherit from another config file; this file's own keys win over the
+  // parent's. A "//"-prefixed path resolves from the git repository root,
+  // the same as "model" and "markdownFiles".
+  // "extends": "//configs/.commentlintrc.json",
+
+  // Settings read by the npm wrapper, not by commentlint itself.
+  // "npm": {}
+}
+"""
+
+
+def write_default(path: str) -> None:
+    """Write DEFAULT_CONFIG to `path`, refusing to overwrite an existing file."""
+    if os.path.exists(path):
+        raise ConfigError(f"{path}: already exists")
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        f.write(DEFAULT_CONFIG)

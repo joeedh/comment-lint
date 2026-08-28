@@ -42,8 +42,9 @@ def known_ids() -> set[str]:
 
 # Style rules whose bar for what counts as a violation is a per-project call,
 # not something the taxonomy can settle -- so they start off and a project
-# opts back in with enableRules / --enable-rule.
-DEFAULT_DISABLED: set[str] = {"C10", "C11"}
+# opts back in with enableRules / --enable-rule. C13 (non-Latin-1 unicode) joins
+# them for the same reason: plenty of legitimate comments use it.
+DEFAULT_DISABLED: set[str] = {"C10", "C11", "C13"}
 
 
 def thresholds(model_dir: str | None = None) -> dict[str, float]:

@@ -23,9 +23,64 @@ function findConfig(startDir) {
   }
 }
 
+// Mirrors commentlint/config.py's _strip_json_comments: blanks out `//` and
+// `/* */` comments that fall outside string literals, replacing each
+// stripped character with a space so parse-error positions do not shift.
+function stripJsonComments(text) {
+  let out = '';
+  let i = 0;
+  const n = text.length;
+  let inString = false;
+  let escape = false;
+  while (i < n) {
+    const c = text[i];
+    if (inString) {
+      out += c;
+      if (escape) {
+        escape = false;
+      } else if (c === '\\') {
+        escape = true;
+      } else if (c === '"') {
+        inString = false;
+      }
+      i += 1;
+      continue;
+    }
+    if (c === '"') {
+      inString = true;
+      out += c;
+      i += 1;
+      continue;
+    }
+    if (c === '/' && text[i + 1] === '/') {
+      while (i < n && text[i] !== '\n') {
+        out += ' ';
+        i += 1;
+      }
+      continue;
+    }
+    if (c === '/' && text[i + 1] === '*') {
+      out += '  ';
+      i += 2;
+      while (i < n && !(text[i] === '*' && text[i + 1] === '/')) {
+        out += text[i] === '\n' ? '\n' : ' ';
+        i += 1;
+      }
+      if (i < n) {
+        out += '  ';
+        i += 2;
+      }
+      continue;
+    }
+    out += c;
+    i += 1;
+  }
+  return out;
+}
+
 function readJson(filePath) {
   try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    return JSON.parse(stripJsonComments(fs.readFileSync(filePath, 'utf8')));
   } catch {
     return {};
   }

@@ -15,7 +15,7 @@
 ## Orientation
 * docs/architecture.md describes how the tool is put together and why. Read it before
   moving anything across a module boundary.
-* The taxonomy is data/rules.json: 25 rules, of which 16 have enough examples to train.
+* The taxonomy is data/rules.json: 26 rules, of which 16 have enough examples to train.
 * Scoring has two stages. A gate decides whether a comment breaks some rule, then the
   per-rule heads are ranked against each other. A ranked rule is a suspicion, not a
   detection, and anything that presents it as a detection overstates what the model knows.

@@ -36,6 +36,11 @@ Not scored:
 - license and copyright headers
 - commented-out code, which is reported as rule C2 from a heuristic rather than sent to
   the prose model. It is counted in the summary and listed by `--show-code`.
+- a prose comment with a Unicode codepoint above U+00FF (outside Latin-1), reported as rule
+  C13 from the same kind of heuristic. C2 takes priority: a comment that is both commented-out
+  code and holds a disallowed codepoint is reported once, as C2. C13 ships off by default
+  (`enableRules`/`--enable-rule` turns it on) and `unicodeWhitelist` in config names codepoints
+  or ranges to let through.
 
 ## Reading the output
 
@@ -85,8 +90,9 @@ overrides it. One config per run — there are no per-file `overrides`.
 ```
 
 Keys: `threshold` `limit` `minLength` `exclude` `ignorePath` `withNodeModules` `cache`
-`cacheStrategy` `backend` `model` `disableRules` `enableRules` `extends`. An unknown key is
-an error, not a shrug.
+`cacheStrategy` `backend` `model` `disableRules` `enableRules` `unicodeWhitelist` `extends`.
+An unknown key is an error, not a shrug. `commentlint --init` writes a `.commentlintrc.json`
+with every key listed, commented out, and explained.
 
 `extends` names a parent config to inherit from, with this config's own keys applied over
 it. A plain path resolves relative to the config file's own directory, the same as `model`
@@ -99,9 +105,12 @@ that decides whether a comment is flagged still runs over every rule, so disabli
 changes which rule a finding is named after -- a comment that would only have been named for
 a disabled rule reports clean instead of shifting to a different rule.
 
-`C10` and `C11` are in `rules.DEFAULT_DISABLED` and start off; `enableRules` names one to
-turn back on. The effective disabled set is `(DEFAULT_DISABLED - enableRules) | disableRules`,
-so a rule named in both stays disabled.
+`C10`, `C11` and `C13` are in `rules.DEFAULT_DISABLED` and start off; `enableRules` names one
+to turn back on. The effective disabled set is `(DEFAULT_DISABLED - enableRules) |
+disableRules`, so a rule named in both stays disabled.
+
+`unicodeWhitelist` is a list of codepoints and ranges that C13 lets through: `"U+2014"` for one
+codepoint, `"U+2018-U+201F"` for an inclusive range. It only matters once C13 is enabled.
 
 `backend` is `linear` or `encoder`. Scanning cuts on the gate, so a model without a gate
 head refuses a scan rather than reporting every file clean; it still ranks rules for one

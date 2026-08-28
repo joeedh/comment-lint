@@ -31,6 +31,7 @@ $env:PATH += ';C:\path\to\commentlint\bin'          # PowerShell, this session o
 commentlint src/            lint a tree
 commentlint "some comment"  score one comment
 commentlint --coverage      which rules the model can name
+commentlint --init          write a default .commentlintrc.json, every option explained
 ```
 
 Report a comment the model should have flagged and did not, or one it flagged but
@@ -57,7 +58,8 @@ the launchers take the first python they find on PATH, and exit 127 if there is 
 commentlint reads `.commentlintrc.json` the way prettier reads its config: it searches
 upward from the working directory and the nearest file wins, so a subdirectory can override
 a repository-wide default just by holding its own copy. A single JSON object holds every
-option, with the same names the CLI flags use underneath their dashes:
+option, with the same names the CLI flags use underneath their dashes. `//` and `/* */`
+comments are allowed outside string literals and are stripped before parsing:
 
 ```json
 {
@@ -74,9 +76,14 @@ option, with the same names the CLI flags use underneath their dashes:
   "markdown": false,
   "markdownFiles": ["CLAUDE.md"],
   "disableRules": ["P9"],
-  "enableRules": ["C10"]
+  "enableRules": ["C10"],
+  "unicodeWhitelist": ["U+2018-U+201F"]
 }
 ```
+
+`commentlint --init` writes a `.commentlintrc.json` in the working directory with every one of
+these keys present, commented out, and explained; uncomment the ones a project wants to set. It
+refuses to run over an existing config rather than overwrite it.
 
 An unknown key or a value of the wrong type fails the run rather than being ignored, so a
 typo in the config surfaces immediately instead of silently falling back to a default. A CLI
@@ -92,12 +99,16 @@ not affected, so a comment that would only have been named for a disabled rule i
 reported clean rather than under a different rule. `C2` (commented-out code) is a heuristic
 outside the model and can be disabled the same way.
 
-`C10` and `C11` ship off by default: whether comments use `//` versus `/* */` and how many
-lines a non-doc comment may run are per-project style calls, not something the taxonomy can
-settle for every codebase. `enableRules` (or `--enable-rule RULE`, repeatable) turns one back
-on. A rule named in both `disableRules` and `enableRules` stays disabled -- disabling is
-treated as the more specific request. `--list-rules` marks each rule that is off in the
-resolved config with `(disabled)`.
+`C10`, `C11` and `C13` ship off by default: whether comments use `//` versus `/* */`, how many
+lines a non-doc comment may run, and whether a comment may hold a Unicode character outside
+Latin-1 are per-project style calls, not something the taxonomy can settle for every codebase.
+`enableRules` (or `--enable-rule RULE`, repeatable) turns one back on. A rule named in both
+`disableRules` and `enableRules` stays disabled -- disabling is treated as the more specific
+request. `--list-rules` marks each rule that is off in the resolved config with `(disabled)`.
+
+`C13` (no non-Latin-1 characters in a comment) is a heuristic outside the model, like `C2`.
+`unicodeWhitelist` names codepoints and ranges it lets through: `"U+2014"` for one codepoint,
+`"U+2018-U+201F"` for an inclusive range, checked once `C13` is enabled.
 
 ### Markdown
 

@@ -14,10 +14,13 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
+from .. import unicode_whitelist
+
 if TYPE_CHECKING:
     from .base import Comment
 
 MIN_LEN = 40  # excludes 2.9% of the training corpus and most `// TODO` noise
+LATIN1_MAX = 0xFF  # rule C13's ceiling: prose stays in Latin-1 unless whitelisted
 
 DIRECTIVE = re.compile(
     r"^\s*(?:"
@@ -76,6 +79,18 @@ def _low_prose(text: str) -> bool:
         return True
     punct = sum(1 for c in text if c in "{}[]();=<>|&")
     return punct / max(1, len(text)) > 0.04
+
+
+def disallowed_codepoints(text: str, whitelist: unicode_whitelist.Ranges) -> list[int]:
+    """Distinct codepoints above Latin-1 in `text`, first-seen order, minus `whitelist`."""
+    found: list[int] = []
+    seen: set[int] = set()
+    for ch in text:
+        cp = ord(ch)
+        if cp > LATIN1_MAX and cp not in seen and not unicode_whitelist.contains(whitelist, cp):
+            seen.add(cp)
+            found.append(cp)
+    return found
 
 
 def classify(comment: "Comment") -> str:

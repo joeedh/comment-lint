@@ -22,6 +22,7 @@ from . import cache as cache_mod
 from . import config as config_mod
 from . import feedback as feedback_mod
 from . import rules as rules_mod
+from . import unicode_whitelist
 from .comments import EXTENSIONS, MD_EXT, UnparseableSource, extract_file
 from .comments import filters
 from .comments.base import Comment
@@ -30,6 +31,8 @@ from .discover import discover
 EXIT_CLEAN, EXIT_FINDINGS, EXIT_USAGE, EXIT_INTERNAL = 0, 1, 2, 3
 TOP_K = 3
 GLOB_CHARS = set("*?[")
+CODE_RULE = "C2"  # commented-out code: high-volume, hidden unless --show-code
+UNICODE_RULE = "C13"  # non-Latin-1 characters in a comment
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -63,6 +66,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--cache-strategy", choices=["metadata", "content"], help="default metadata")
     p.add_argument("--config", help="use this config file")
     p.add_argument("--no-config", action="store_true", help="ignore any .commentlintrc.json")
+    p.add_argument("--init", action="store_true",
+                   help=f"write a default {config_mod.CONFIG_NAME} in the current directory, "
+                        f"with every option explained and commented out")
     p.add_argument("--model", help="model directory")
     p.add_argument("--backend", choices=["linear", "encoder"])
     p.add_argument("--top", type=int, default=TOP_K, help=f"rules to name per finding (default {TOP_K})")
@@ -109,6 +115,7 @@ class Options:
         self.enable_rules = set(args.enable_rules) | set(cfg.get("enableRules", []))
         self.disable_rules = ((rules_mod.DEFAULT_DISABLED - self.enable_rules)
                                | self.explicit_disable_rules)
+        self.unicode_whitelist = unicode_whitelist.parse(cfg.get("unicodeWhitelist", []))
         self.markdown = pick("markdown", "markdown", False)
         self.markdown_files = list(args.markdown_files) + list(cfg.get("markdownFiles", []))
         self.cache = False if args.no_cache else cfg.get("cache", True)
@@ -148,6 +155,8 @@ def main(argv: list[str] | None = None) -> int:
                 pass
 
     args = build_parser().parse_args(argv)
+    if args.init:
+        return run_init(args)
     try:
         cfg, cfg_path = config_mod.resolve(args)
     except config_mod.ConfigError as e:
@@ -194,6 +203,18 @@ def main(argv: list[str] | None = None) -> int:
         return run_single(text, args, opts)
 
     return run_scan(args, opts)
+
+
+def run_init(args: argparse.Namespace) -> int:
+    target = os.path.join(os.getcwd(), config_mod.CONFIG_NAME)
+    try:
+        config_mod.write_default(target)
+    except config_mod.ConfigError as e:
+        print(f"commentlint: {e}", file=sys.stderr)
+        return EXIT_USAGE
+    if not args.quiet:
+        print(f"wrote {_rel(target)}")
+    return EXIT_CLEAN
 
 
 def run_single(text: str, args: argparse.Namespace, opts: Options) -> int:
@@ -345,6 +366,7 @@ def run_scan(args: argparse.Namespace, opts: Options) -> int:
             "markdown": opts.markdown,
             "markdown_files": tuple(sorted(opts.markdown_files)),
             "disable_rules": tuple(sorted(opts.disable_rules)),
+            "unicode_whitelist": tuple(sorted(opts.unicode_whitelist)),
         }),
         strategy=opts.cache_strategy,
         enabled=opts.cache,
@@ -378,9 +400,17 @@ def run_scan(args: argparse.Namespace, opts: Options) -> int:
             if verdict == "skip":
                 continue
             if verdict == "code":
-                if "C2" not in opts.disable_rules:
-                    per_file[path].append(_finding(c, "C2", 1.0, [("C2", 1.0)], "heuristic"))
+                if CODE_RULE not in opts.disable_rules:
+                    per_file[path].append(_finding(c, CODE_RULE, 1.0, [(CODE_RULE, 1.0)], "heuristic"))
                 continue
+            # verdict == "prose" here; C2 already claimed anything that reads as
+            # code, so a unicode character inside a commented-out string literal
+            # is not also reported under C13
+            if UNICODE_RULE not in opts.disable_rules:
+                bad = filters.disallowed_codepoints(c.text, opts.unicode_whitelist)
+                if bad:
+                    per_file[path].append(_finding_unicode(c, bad))
+                    continue
             pending.append((path, c))
 
     if pending:
@@ -442,6 +472,12 @@ def _finding(
     }
 
 
+def _finding_unicode(c: Comment, codepoints: list[int]) -> cache_mod.Finding:
+    finding = _finding(c, UNICODE_RULE, 1.0, [(UNICODE_RULE, 1.0)], "heuristic")
+    finding["codepoints"] = [f"U+{cp:04X}" for cp in codepoints]
+    return finding
+
+
 def report(
     per_file: dict[str, list[cache_mod.Finding]],
     files: list[str],
@@ -457,14 +493,20 @@ def report(
     total = len(flat)
 
     # a heuristic's confidence and a model probability are different quantities,
-    # so one ranking over both lets commented-out code bury the prose findings
+    # so one ranking over both lets a heuristic finding bury the ranked prose
+    # findings. C2 is also high-volume enough to hide behind --show-code on top
+    # of that; other heuristic rules (e.g. C13) are shown by default instead.
     MODEL_SOURCES = ("model", "model-markdown")
     prose = sorted(
         [pf for pf in flat if pf[1]["source"] in MODEL_SOURCES],
         key=lambda pf: (-pf[1]["score"], pf[0], pf[1]["line"]),
     )
-    code = sorted([pf for pf in flat if pf[1]["source"] not in MODEL_SOURCES], key=lambda pf: (pf[0], pf[1]["line"]))
-    listed = prose + code if args.show_code else prose
+    flagged = sorted(
+        [pf for pf in flat if pf[1]["source"] not in MODEL_SOURCES and pf[1]["rule"] != CODE_RULE],
+        key=lambda pf: (pf[0], pf[1]["line"]),
+    )
+    code = sorted([pf for pf in flat if pf[1]["rule"] == CODE_RULE], key=lambda pf: (pf[0], pf[1]["line"]))
+    listed = prose + flagged + code if args.show_code else prose + flagged
     shown = listed if opts.limit is None or opts.limit <= 0 else listed[: opts.limit]
     n_experimental = sum(1 for _, f in flat if f.get("experimental"))
 
@@ -501,7 +543,7 @@ def report(
         if len(listed) > len(shown):
             print(f"... and {len(listed) - len(shown)} more not shown (--limit {opts.limit})\n")
 
-    print(f"{len(files)} files, {n_comments} comments, {len(prose)} findings "
+    print(f"{len(files)} files, {n_comments} comments, {len(prose) + len(flagged)} findings "
           f"(cut {cut:.2f}, {n_cached} cached, {elapsed:.1f}s)")
     if code and not args.show_code:
         n_files = len({p for p, _ in code})
@@ -566,6 +608,15 @@ class _Colors:
         self.dim = "\x1b[2m" if enabled else ""
 
 
+def _concise_tag(f: cache_mod.Finding) -> str:
+    """The score column's text: a heuristic's 1.0 is not a graded confidence."""
+    if f["rule"] == CODE_RULE:
+        return "code"
+    if f["source"] == "heuristic":
+        return "flag"
+    return f"{f['score']:.2f}"
+
+
 def _print_concise(by_file: dict[str, list[cache_mod.Finding]]) -> None:
     if by_file:
         print("output format:")
@@ -575,7 +626,7 @@ def _print_concise(by_file: dict[str, list[cache_mod.Finding]]) -> None:
     for p, fs in by_file.items():
         print(_rel(p))
         for f in sorted(fs, key=lambda f: (f["line"], f["col"])):
-            tag = "code" if f["source"] == "heuristic" else f"{f['score']:.2f}"
+            tag = _concise_tag(f)
             head = f["text"].split("\n")[0]
             pos = f"{f['line']}:{f['col']}"
             if f["end_line"] != f["line"]:
@@ -603,6 +654,9 @@ def _print_ts(by_file: dict[str, list[cache_mod.Finding]], use_color: bool) -> N
                   f"{c.cyan}{_display_rule(f['rule'])}{c.reset}: {desc}")
             for line in f["text"].split("\n"):
                 print(f"{c.dim}    {line}{c.reset}")
+            if f.get("codepoints"):
+                chars = ", ".join(f"{cp} ({chr(int(cp[2:], 16))})" for cp in f["codepoints"])
+                print(f"{c.dim}    non-Latin-1: {chars}{c.reset}")
             print()
 
 
