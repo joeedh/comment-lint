@@ -537,7 +537,7 @@ def report(
         for p, f in shown:
             by_file.setdefault(p, []).append(f)
         if args.concise:
-            _print_concise(by_file)
+            _print_concise(by_file, rules_mod.descriptions())
         else:
             _print_ts(by_file, _use_color(args))
         if len(listed) > len(shown):
@@ -617,11 +617,14 @@ def _concise_tag(f: cache_mod.Finding) -> str:
     return f"{f['score']:.2f}"
 
 
-def _print_concise(by_file: dict[str, list[cache_mod.Finding]]) -> None:
+def _print_concise(by_file: dict[str, list[cache_mod.Finding]], rule_desc: dict[str, str]) -> None:
     if by_file:
         print("output format:")
         print(f"  {'startLine:startCol-endLine:endCol':<12} {'rule':8s} {'score':>4}  comment")
-        print("    see rule details with: commentlint --list-rules")
+        violated_rules = sorted({f["rule"] for fs in by_file.values() for f in fs})
+        print("\nViolated rules:")
+        for rule in violated_rules:
+            print(f"  {_display_rule(rule):8s} {rule_desc.get(rule, '')}")
         print("\nErrors:")
     for p, fs in by_file.items():
         print(_rel(p))
