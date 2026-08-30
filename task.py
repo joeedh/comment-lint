@@ -109,6 +109,7 @@ def build_npm_release(new_version: str) -> str:
     shutil.copytree(os.path.join(ROOT, "npm", "bin"), os.path.join(dest, "bin"))
     shutil.copytree(os.path.join(ROOT, "npm", "lib"), os.path.join(dest, "lib"))
     shutil.copy2(os.path.join(ROOT, "npm", ".npmignore"), os.path.join(dest, ".npmignore"))
+    shutil.copy2(os.path.join(ROOT, "Readme.MD"), os.path.join(dest, "README.md"))
     stage_release_files(os.path.join(dest, "vendor"))
     return dest
 

@@ -11,7 +11,8 @@
   "files": [
     "bin",
     "lib",
-    "vendor"
+    "vendor",
+    "README.md"
   ],
   "engines": {
     "node": ">=16"
