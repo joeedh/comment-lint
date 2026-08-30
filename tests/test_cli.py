@@ -452,6 +452,14 @@ class TestMarkdown:
         assert any(p.endswith("wanted.md") for p in paths)
         assert not any(p.endswith("other.md") for p in paths)
 
+    def test_markdown_files_does_not_suppress_the_default_scan_root(self, project, capsys):
+        (project / "wanted.md").write_text(self.PROSE, encoding="utf-8")
+        _, out = run(["--markdown-file", "wanted.md", "--json", "--threshold", "0.01"], capsys)
+        data = json.loads(out)
+        paths = {f["path"] for f in data["files"]}
+        assert any(p.endswith("wanted.md") for p in paths)
+        assert any(p.endswith("a.ts") for p in paths)
+
     def test_missing_markdown_file_is_a_skip_not_a_crash(self, project, capsys):
         code, out = run(["--markdown-file", "nope.md", "--threshold", "0.01"], capsys)
         assert code != EXIT_USAGE

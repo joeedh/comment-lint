@@ -344,14 +344,21 @@ def run_scan(args: argparse.Namespace, opts: Options) -> int:
     # same as their built-in defaults; custom markdown extensions are gated by
     # "markdown" the same as the built-in .md/.markdown are
     walk_extra = frozenset().union(*(opts.language_extensions.get(f, []) for f in DEFAULT_WALK_FAMILIES))
-    # markdownFiles' presence overrides the directory-walk enabler: a repo
-    # that lists specific files does not also want the whole tree opted in
+    # markdownFiles' presence overrides the directory-walk enabler for markdown
+    # specifically: a repo that lists specific markdown files does not also
+    # want every other .md/.markdown file in the tree opted in. The rest of
+    # the tree -- non-markdown files -- is still scanned regardless.
     markdown_exts = FAMILIES["markdown"] | frozenset(opts.language_extensions.get("markdown", []))
     extra_extensions = walk_extra | (markdown_exts if (opts.markdown and not opts.markdown_files) else frozenset())
 
+    # markdown_files are appended as extra explicit files, never substituted for
+    # the scan root: an empty argv still means "walk the current directory" even
+    # once markdownFiles is set, the same as it does without it.
+    scan_paths = list(args.paths) if args.paths else ["."]
+
     try:
         files = discover(
-            list(args.paths) + markdown_files, exclude=opts.exclude, ignore_path=opts.ignore_path,
+            scan_paths + markdown_files, exclude=opts.exclude, ignore_path=opts.ignore_path,
             with_node_modules=opts.with_node_modules,
             on_skip=lambda p, why: skipped.append((p, why)),
             extra_extensions=extra_extensions,

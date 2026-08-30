@@ -293,9 +293,10 @@ DEFAULT_CONFIG = """{
   // experimental.
   // "markdown": false,
 
-  // Always check these markdown files, regardless of "markdown". Once this
-  // is non-empty it replaces the directory walk: only the named files are
-  // checked, not the whole tree.
+  // Always check these markdown files, regardless of "markdown". They are
+  // added on top of the normal scan, not in place of it. Once this is
+  // non-empty, "markdown" no longer opts every .md/.markdown file in the
+  // tree into the walk -- only the files named here are checked.
   // "markdownFiles": ["CLAUDE.md"],
 
   // Rule ids never to report. The gate that decides whether a comment is
