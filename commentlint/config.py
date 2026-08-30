@@ -7,6 +7,10 @@ threshold, and per-file config would make the single cache key impossible.
 That per-file resolution is also the only reason prettier needs `overrides`,
 so there is none of that either.
 
+A directory holding neither `.commentlintrc.json` nor `.commentlintrc.local.json`
+falls back to `.commentlintrc.jsonc`/`.commentlintrc.local.jsonc` respectively,
+checked only when the `.json` name is absent so the two can never collide.
+
 The file is JSON with `//` and `/* */` comments allowed outside string
 literals, stripped before parsing.
 
@@ -25,9 +29,12 @@ from typing import Any
 
 from . import rules as rules_mod
 from . import unicode_whitelist
+from .comments import FAMILIES
 
 CONFIG_NAME = ".commentlintrc.json"
+CONFIG_NAME_JSONC = ".commentlintrc.jsonc"
 LOCAL_CONFIG_NAME = ".commentlintrc.local.json"
+LOCAL_CONFIG_NAME_JSONC = ".commentlintrc.local.jsonc"
 REPO_ROOT_PREFIX = "//"
 
 KEYS: dict[str, type] = {
@@ -48,6 +55,7 @@ KEYS: dict[str, type] = {
     "enableRules": list,
     "unicodeWhitelist": list,
     "extends": str,
+    "languageExtensions": dict,
 }
 
 
@@ -56,12 +64,18 @@ class ConfigError(Exception):
 
 
 def find(start: str | None = None) -> str | None:
-    """Path of the nearest config at or above `start`, or None."""
+    """Path of the nearest config at or above `start`, or None.
+
+    `.commentlintrc.jsonc` is tried at each directory only when
+    `.commentlintrc.json` isn't there, so a directory holding both never
+    hides the `.json` one.
+    """
     d = os.path.abspath(start or os.getcwd())
     while True:
-        candidate = os.path.join(d, CONFIG_NAME)
-        if os.path.isfile(candidate):
-            return candidate
+        for name in (CONFIG_NAME, CONFIG_NAME_JSONC):
+            candidate = os.path.join(d, name)
+            if os.path.isfile(candidate):
+                return candidate
         parent = os.path.dirname(d)
         if parent == d:
             return None
@@ -86,6 +100,38 @@ def _resolve_reference(path: str, reference: str) -> str:
     if reference.startswith(REPO_ROOT_PREFIX):
         return os.path.join(_git_root(os.path.dirname(path)), reference[len(REPO_ROOT_PREFIX):].lstrip("/"))
     return os.path.join(os.path.dirname(path), reference)
+
+
+def _validate_language_extensions(path: str, value: dict[str, Any]) -> None:
+    """Check `languageExtensions` and lowercase its extensions in place.
+
+    Known families, dotted extensions, each claimed by exactly one family
+    across both the built-ins and this config -- lowercased here so a
+    later `os.path.splitext(...)[1].lower()` lookup still finds it.
+    """
+    unknown = sorted(set(value) - set(FAMILIES))
+    if unknown:
+        raise ConfigError(
+            f"{path}: languageExtensions: unknown language family/families "
+            f"{', '.join(unknown)}; expected one of {', '.join(sorted(FAMILIES))}"
+        )
+    claimed = {ext: family for family, exts in FAMILIES.items() for ext in exts}
+    for family, exts in value.items():
+        if not isinstance(exts, list) or not all(isinstance(e, str) for e in exts):
+            raise ConfigError(f"{path}: languageExtensions.{family} must be a list of strings")
+        lowered = []
+        for ext in exts:
+            ext = ext.lower()
+            if not ext.startswith("."):
+                raise ConfigError(f"{path}: languageExtensions.{family}: {ext!r} must start with '.'")
+            if ext in claimed and claimed[ext] != family:
+                raise ConfigError(
+                    f"{path}: languageExtensions.{family}: {ext} is already {claimed[ext]}; "
+                    f"an extension can belong to only one language family"
+                )
+            claimed[ext] = family
+            lowered.append(ext)
+        value[family] = lowered
 
 
 def _strip_json_comments(text: str) -> str:
@@ -168,6 +214,8 @@ def load(path: str, _seen: frozenset[str] = frozenset()) -> dict[str, Any]:
             unicode_whitelist.parse(data["unicodeWhitelist"])
         except unicode_whitelist.WhitelistError as e:
             raise ConfigError(f"{path}: unicodeWhitelist: {e}") from e
+    if "languageExtensions" in data:
+        _validate_language_extensions(path, data["languageExtensions"])
     if "model" in data:
         data["model"] = _resolve_reference(path, data["model"])
     if "markdownFiles" in data:
@@ -194,9 +242,12 @@ def resolve(
     if args.config and not os.path.isfile(path):
         raise ConfigError(f"{path}: no such file")
     data = load(path)
-    local_path = os.path.join(os.path.dirname(path), LOCAL_CONFIG_NAME)
-    if os.path.isfile(local_path):
-        data.update(load(local_path))
+    config_dir = os.path.dirname(path)
+    for local_name in (LOCAL_CONFIG_NAME, LOCAL_CONFIG_NAME_JSONC):
+        local_path = os.path.join(config_dir, local_name)
+        if os.path.isfile(local_path):
+            data.update(load(local_path))
+            break
     return data, path
 
 
@@ -261,6 +312,13 @@ DEFAULT_CONFIG = """{
   // or "U+XXXX-U+YYYY" for an inclusive range. C13 ships off by default, so
   // this only matters once it is turned on with enableRules.
   // "unicodeWhitelist": ["U+2018-U+201F"],
+
+  // Extra file extensions for the three supported language families,
+  // on top of their built-in defaults ("c-style": .ts/.tsx/.js/.jsx/.mjs/
+  // .cjs/.mts/.cts, "python-style": .py/.pyi, "markdown": .md/.markdown).
+  // An extension can belong to only one family. "c-style" reuses the TS/JS
+  // extractor, which is a fair stand-in for other // and /* */ languages.
+  // "languageExtensions": {"c-style": [".c", ".h", ".cpp", ".hpp", ".java"]},
 
   // Inherit from another config file; this file's own keys win over the
   // parent's. A "//"-prefixed path resolves from the git repository root,

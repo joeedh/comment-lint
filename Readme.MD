@@ -77,7 +77,8 @@ comments are allowed outside string literals and are stripped before parsing:
   "markdownFiles": ["CLAUDE.md"],
   "disableRules": ["P9"],
   "enableRules": ["C10"],
-  "unicodeWhitelist": ["U+2018-U+201F"]
+  "unicodeWhitelist": ["U+2018-U+201F"],
+  "languageExtensions": {"c-style": [".c", ".h", ".cpp", ".hpp", ".java"]}
 }
 ```
 
@@ -109,6 +110,25 @@ request. `--list-rules` marks each rule that is off in the resolved config with 
 `C13` (no non-Latin-1 characters in a comment) is a heuristic outside the model, like `C2`.
 `unicodeWhitelist` names codepoints and ranges it lets through: `"U+2014"` for one codepoint,
 `"U+2018-U+201F"` for an inclusive range, checked once `C13` is enabled.
+
+### Language families
+
+commentlint extracts comments through three extractors: `c-style` (a state machine written for
+TS/JS, reused as-is for any other `//`/`/* */` language -- its extra handling for template
+literals and regex literals is JS-specific but harmless on source that has neither),
+`python-style`, and `markdown`. Each family owns a default set of extensions --
+`c-style`: `.ts`/`.tsx`/`.js`/`.jsx`/`.mjs`/`.cjs`/`.mts`/`.cts`, `python-style`: `.py`/`.pyi`,
+`markdown`: `.md`/`.markdown` -- and `languageExtensions` adds more:
+
+```json
+{ "languageExtensions": { "c-style": [".c", ".h", ".cpp", ".hpp", ".java"] } }
+```
+
+An extension can belong to only one family; naming one already claimed by a default or by
+another family in the same config fails the run. `c-style` and `python-style` additions join
+directory walks unconditionally, the same as their built-in extensions; a `markdown` addition
+is still gated by `--markdown`/`markdownFiles` as usual. A file named directly on the command
+line is scanned by whichever family claims its extension, walk or no walk.
 
 ### Markdown
 

@@ -172,6 +172,29 @@ class TestPython:
             extract("t.py", "def (:\n")
 
 
+class TestLanguageExtensions:
+    def test_unmapped_extension_has_no_family(self):
+        from commentlint.comments import language_of
+
+        assert language_of("a.c") is None
+
+    def test_extra_maps_an_extension_to_a_family(self):
+        from commentlint.comments import language_of
+
+        assert language_of("a.c", {"c-style": [".c"]}) == "c-style"
+
+    def test_extra_does_not_override_a_default(self):
+        from commentlint.comments import language_of
+
+        assert language_of("a.ts", {"python-style": [".ts"]}) == "c-style"
+
+    def test_extract_uses_the_family_extra_maps_to(self):
+        assert extract("a.c", "// real\n", {"c-style": [".c"]})[0].text == "real"
+
+    def test_extract_ignores_an_unmapped_extension(self):
+        assert extract("a.c", "// real\n") == []
+
+
 class TestEncoding:
     def test_bom_is_stripped_by_the_reader(self, tmp_path):
         from commentlint.comments import extract_file

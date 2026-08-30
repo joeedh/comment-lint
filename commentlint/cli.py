@@ -23,7 +23,7 @@ from . import config as config_mod
 from . import feedback as feedback_mod
 from . import rules as rules_mod
 from . import unicode_whitelist
-from .comments import EXTENSIONS, MD_EXT, UnparseableSource, extract_file
+from .comments import DEFAULT_WALK_FAMILIES, EXTENSIONS, FAMILIES, UnparseableSource, extract_file
 from .comments import filters
 from .comments.base import Comment
 from .discover import discover
@@ -118,6 +118,7 @@ class Options:
         self.unicode_whitelist = unicode_whitelist.parse(cfg.get("unicodeWhitelist", []))
         self.markdown = pick("markdown", "markdown", False)
         self.markdown_files = list(args.markdown_files) + list(cfg.get("markdownFiles", []))
+        self.language_extensions: dict[str, list[str]] = cfg.get("languageExtensions", {})
         self.cache = False if args.no_cache else cfg.get("cache", True)
         self.cache_strategy = pick("cache_strategy", "cacheStrategy", "metadata")
         self.backend = pick("backend", "backend", None)
@@ -130,7 +131,7 @@ class Options:
         self.fingerprint_dir = self.model or default_dir
 
 
-def looks_like_path(arg: str) -> bool:
+def looks_like_path(arg: str, extra_extensions: frozenset[str] = frozenset()) -> bool:
     """Whether a bare positional is a path rather than literal comment text.
 
     A single token with no whitespace is taken as a path even when nothing is
@@ -139,7 +140,7 @@ def looks_like_path(arg: str) -> bool:
     """
     if os.path.exists(arg) or GLOB_CHARS & set(arg):
         return True
-    if os.path.splitext(arg)[1].lower() in EXTENSIONS:
+    if os.path.splitext(arg)[1].lower() in EXTENSIONS | extra_extensions:
         return True
     return not any(c.isspace() for c in arg)
 
@@ -197,7 +198,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.entire_file:
         with open(args.entire_file, encoding="utf-8", errors="replace") as f:
             text = f.read()
-    if text is None and len(args.paths) == 1 and not looks_like_path(args.paths[0]):
+    walk_extra = frozenset().union(*(opts.language_extensions.get(f, []) for f in DEFAULT_WALK_FAMILIES))
+    if text is None and len(args.paths) == 1 and not looks_like_path(args.paths[0], walk_extra):
         text = args.paths[0]  # back-compat: a bare string that is not a path is a comment
     if text is not None:
         return run_single(text, args, opts)
@@ -338,9 +340,14 @@ def run_scan(args: argparse.Namespace, opts: Options) -> int:
         else:
             skipped.append((p, "no such file"))
 
+    # custom c-style/python-style extensions join the walk unconditionally, the
+    # same as their built-in defaults; custom markdown extensions are gated by
+    # "markdown" the same as the built-in .md/.markdown are
+    walk_extra = frozenset().union(*(opts.language_extensions.get(f, []) for f in DEFAULT_WALK_FAMILIES))
     # markdownFiles' presence overrides the directory-walk enabler: a repo
     # that lists specific files does not also want the whole tree opted in
-    extra_extensions = frozenset(MD_EXT) if (opts.markdown and not opts.markdown_files) else frozenset()
+    markdown_exts = FAMILIES["markdown"] | frozenset(opts.language_extensions.get("markdown", []))
+    extra_extensions = walk_extra | (markdown_exts if (opts.markdown and not opts.markdown_files) else frozenset())
 
     try:
         files = discover(
@@ -365,6 +372,9 @@ def run_scan(args: argparse.Namespace, opts: Options) -> int:
             "backend": opts.backend, "top": args.top,
             "markdown": opts.markdown,
             "markdown_files": tuple(sorted(opts.markdown_files)),
+            "language_extensions": tuple(sorted(
+                (family, tuple(sorted(exts))) for family, exts in opts.language_extensions.items()
+            )),
             "disable_rules": tuple(sorted(opts.disable_rules)),
             "unicode_whitelist": tuple(sorted(opts.unicode_whitelist)),
         }),
@@ -385,7 +395,7 @@ def run_scan(args: argparse.Namespace, opts: Options) -> int:
         per_file[path], counts[path] = [], 0
         fresh.append(path)
         try:
-            comments = extract_file(path)
+            comments = extract_file(path, opts.language_extensions)
         except UnparseableSource as e:
             skipped.append((path, f"could not parse: {e}"))
             continue

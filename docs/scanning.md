@@ -77,8 +77,10 @@ to 0.70, which is the linear model's number and correct for nothing else.
 
 ## Config
 
-`.commentlintrc.json`, searched from the working directory upward, nearest wins. The CLI
-overrides it. One config per run — there are no per-file `overrides`.
+`.commentlintrc.json`, searched from the working directory upward, nearest wins. A directory
+with no `.commentlintrc.json` falls back to `.commentlintrc.jsonc` (same for the local
+override, `.commentlintrc.local.json`/`.commentlintrc.local.jsonc`). The CLI overrides it.
+One config per run — there are no per-file `overrides`.
 
 ```json
 {

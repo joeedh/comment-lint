@@ -40,6 +40,19 @@ class TestConfig:
     def test_search_stops_at_the_root(self, tmp_path):
         assert config_mod.find(str(tmp_path)) is None
 
+    def test_jsonc_config_is_used_when_json_is_absent(self, tmp_path):
+        (tmp_path / ".commentlintrc.jsonc").write_text('{"threshold": 0.3}', encoding="utf-8")
+        found = config_mod.find(str(tmp_path))
+        assert found is not None and found.endswith(".commentlintrc.jsonc")
+        assert config_mod.load(found)["threshold"] == 0.3
+
+    def test_json_config_wins_over_jsonc_in_the_same_directory(self, tmp_path):
+        (tmp_path / ".commentlintrc.json").write_text('{"threshold": 0.1}', encoding="utf-8")
+        (tmp_path / ".commentlintrc.jsonc").write_text('{"threshold": 0.9}', encoding="utf-8")
+        found = config_mod.find(str(tmp_path))
+        assert found is not None and found.endswith(".commentlintrc.json")
+        assert config_mod.load(found)["threshold"] == 0.1
+
     def test_unknown_key_is_an_error(self, tmp_path):
         p = tmp_path / ".commentlintrc.json"
         p.write_text('{"thresold": 0.5}', encoding="utf-8")
@@ -126,6 +139,19 @@ class TestConfig:
         (tmp_path / ".commentlintrc.local.json").write_text('{"threshold": 0.99}', encoding="utf-8")
         assert config_mod.find(str(tmp_path)) is None
 
+    def test_jsonc_local_override_merges_over_the_base_config(self, project, capsys):
+        (project / ".commentlintrc.json").write_text('{"threshold": 0.01}', encoding="utf-8")
+        (project / ".commentlintrc.local.jsonc").write_text('{"threshold": 0.99}', encoding="utf-8")
+        _, out = run(["."], capsys)
+        assert "cut 0.99" in out
+
+    def test_json_local_override_wins_over_jsonc_in_the_same_directory(self, project, capsys):
+        (project / ".commentlintrc.json").write_text('{"threshold": 0.01}', encoding="utf-8")
+        (project / ".commentlintrc.local.json").write_text('{"threshold": 0.5}', encoding="utf-8")
+        (project / ".commentlintrc.local.jsonc").write_text('{"threshold": 0.99}', encoding="utf-8")
+        _, out = run(["."], capsys)
+        assert "cut 0.5" in out
+
     def test_extends_inherits_the_parent_config(self, tmp_path):
         (tmp_path / "base.json").write_text('{"threshold": 0.5, "limit": 3}', encoding="utf-8")
         child = tmp_path / ".commentlintrc.json"
@@ -195,6 +221,45 @@ class TestUnicodeWhitelistConfig:
         p = tmp_path / ".commentlintrc.json"
         p.write_text('{"unicodeWhitelist": ["U+2015-U+2010"]}', encoding="utf-8")
         with pytest.raises(config_mod.ConfigError, match="after its end"):
+            config_mod.load(str(p))
+
+
+class TestLanguageExtensionsConfig:
+    def test_valid_mapping_loads_cleanly(self, tmp_path):
+        p = tmp_path / ".commentlintrc.json"
+        p.write_text('{"languageExtensions": {"c-style": [".c", ".h"]}}', encoding="utf-8")
+        assert config_mod.load(str(p))["languageExtensions"] == {"c-style": [".c", ".h"]}
+
+    def test_unknown_family_is_an_error(self, tmp_path):
+        p = tmp_path / ".commentlintrc.json"
+        p.write_text('{"languageExtensions": {"shell-style": [".sh"]}}', encoding="utf-8")
+        with pytest.raises(config_mod.ConfigError, match="shell-style"):
+            config_mod.load(str(p))
+
+    def test_extension_without_a_dot_is_an_error(self, tmp_path):
+        p = tmp_path / ".commentlintrc.json"
+        p.write_text('{"languageExtensions": {"c-style": ["c"]}}', encoding="utf-8")
+        with pytest.raises(config_mod.ConfigError, match="must start with"):
+            config_mod.load(str(p))
+
+    def test_extension_already_claimed_by_a_default_is_an_error(self, tmp_path):
+        p = tmp_path / ".commentlintrc.json"
+        p.write_text('{"languageExtensions": {"python-style": [".ts"]}}', encoding="utf-8")
+        with pytest.raises(config_mod.ConfigError, match="already c-style"):
+            config_mod.load(str(p))
+
+    def test_extension_is_lowercased_for_later_lookup(self, tmp_path):
+        p = tmp_path / ".commentlintrc.json"
+        p.write_text('{"languageExtensions": {"c-style": [".C"]}}', encoding="utf-8")
+        assert config_mod.load(str(p))["languageExtensions"] == {"c-style": [".c"]}
+
+    def test_extension_claimed_by_two_custom_families_is_an_error(self, tmp_path):
+        p = tmp_path / ".commentlintrc.json"
+        p.write_text(
+            '{"languageExtensions": {"c-style": [".foo"], "python-style": [".foo"]}}',
+            encoding="utf-8",
+        )
+        with pytest.raises(config_mod.ConfigError, match="already"):
             config_mod.load(str(p))
 
 
@@ -415,6 +480,59 @@ class TestMarkdown:
         (project / "notes.md").write_text(self.PROSE, encoding="utf-8")
         _, md_out = run(["notes.md", "--threshold", "0.01"], capsys)
         assert "experimental" in md_out
+
+
+class TestLanguageExtensions:
+    def test_unmapped_extension_is_ignored_by_default(self, project, capsys):
+        (project / "a.c").write_text(BAD, encoding="utf-8")
+        _, out = run([".", "--json", "--threshold", "0.01"], capsys)
+        data = json.loads(out)
+        assert not any(f["path"].endswith("a.c") for f in data["files"])
+
+    def test_config_extends_the_walk_to_a_mapped_extension(self, project, capsys):
+        (project / ".commentlintrc.json").write_text(
+            '{"languageExtensions": {"c-style": [".c"]}}', encoding="utf-8",
+        )
+        (project / "a.c").write_text(BAD, encoding="utf-8")
+        _, out = run([".", "--json", "--threshold", "0.01"], capsys)
+        data = json.loads(out)
+        assert any(f["path"].endswith("a.c") for f in data["files"])
+
+    def test_findings_from_a_mapped_extension_are_ordinary_code_findings(self, project, capsys):
+        (project / ".commentlintrc.json").write_text(
+            '{"languageExtensions": {"c-style": [".c"]}}', encoding="utf-8",
+        )
+        (project / "a.c").write_text(BAD, encoding="utf-8")
+        _, out = run(["a.c", "--json", "--threshold", "0.01"], capsys)
+        data = json.loads(out)
+        findings = [f for fl in data["files"] for f in fl["findings"]]
+        assert findings
+        assert findings[0]["source"] == "model"
+        assert "experimental" not in findings[0]
+
+    def test_bare_mapped_extension_on_argv_needs_no_flag(self, project, capsys):
+        (project / ".commentlintrc.json").write_text(
+            '{"languageExtensions": {"c-style": [".c"]}}', encoding="utf-8",
+        )
+        (project / "a.c").write_text(BAD, encoding="utf-8")
+        _, out = run(["a.c", "--threshold", "0.01"], capsys)
+        assert "a.c" in out
+
+    def test_a_custom_markdown_extension_still_needs_the_markdown_flag(self, project, capsys):
+        (project / ".commentlintrc.json").write_text(
+            '{"languageExtensions": {"markdown": [".mdx"]}}', encoding="utf-8",
+        )
+        (project / "notes.mdx").write_text(
+            "A paragraph long enough to be worth scoring, written as ordinary prose here.\n",
+            encoding="utf-8",
+        )
+        _, out = run([".", "--json", "--threshold", "0.01"], capsys)
+        data = json.loads(out)
+        assert not any(f["path"].endswith("notes.mdx") for f in data["files"])
+
+        _, out = run([".", "--markdown", "--json", "--threshold", "0.01"], capsys)
+        data = json.loads(out)
+        assert any(f["path"].endswith("notes.mdx") for f in data["files"])
 
 
 class TestParser:
