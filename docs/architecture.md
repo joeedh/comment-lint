@@ -59,6 +59,7 @@ the cache sits where it does and why the module boundaries fall where they do.
 | `commentlint/cli.py` | Argument parsing, config merge, the run modes, output formatting, exit codes |
 | `commentlint/discover.py` | Glob expansion and the pruning walk that decides which files exist for this run |
 | `commentlint/config.py` | `.commentlintrc.json` discovery, validation and merge |
+| `schema/commentlintrc.schema.json` | JSON Schema for editor autocomplete; a test checks its property set against `config.py`'s `KEYS` so the two cannot drift |
 | `commentlint/cache.py` | Findings keyed on file stamp and a run key that hashes the model bytes |
 | `commentlint/backends.py` | The only module that imports scikit-learn or torch |
 | `commentlint/rules.py` | Rule descriptions and calibrated cuts, readable without loading a model |

@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/joeedh/comment-lint/master/schema/commentlintrc.schema.json",
+  "title": "commentlint config",
+  "description": "Schema for .commentlintrc.json / .commentlintrc.jsonc, the config file commentlint discovers by searching upward from the working directory. Comments (// and /* */) are stripped before parsing, so a schema-validating editor should treat this file as JSONC.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "URL of this schema, for editor autocomplete. Ignored by commentlint itself."
+    },
+    "threshold": {
+      "type": "number",
+      "description": "Gate cut: a comment scoring at or above this is reported. Omit to use the model's own calibrated cut, which is what most projects should run."
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Most findings to print; the rest are still counted. Omit for no limit."
+    },
+    "minLength": {
+      "type": "integer",
+      "description": "Skip comments shorter than this many characters."
+    },
+    "exclude": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Extra gitignore-style patterns to skip, on top of .gitignore and .commentlintignore."
+    },
+    "ignorePath": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Extra ignore files to read, beyond .gitignore and .commentlintignore."
+    },
+    "withNodeModules": {
+      "type": "boolean",
+      "description": "Scan node_modules too. Off by default."
+    },
+    "cache": {
+      "type": "boolean",
+      "description": "Cache findings between runs, keyed on file stamp and the model's bytes."
+    },
+    "cacheStrategy": {
+      "type": "string",
+      "enum": ["metadata", "content"],
+      "description": "\"metadata\" trusts mtime and size; \"content\" hashes file contents instead, which is slower but survives a checkout that skips mtimes."
+    },
+    "backend": {
+      "type": "string",
+      "enum": ["linear", "encoder"],
+      "description": "Which backend scores comments: \"linear\" (what ships) or \"encoder\"."
+    },
+    "model": {
+      "type": "string",
+      "description": "Model directory to load, resolved relative to this file. A \"//\"-prefixed path resolves from the git repository root instead."
+    },
+    "npm": {
+      "type": "object",
+      "description": "Settings read by the npm wrapper, not by commentlint itself.",
+      "additionalProperties": true,
+      "properties": {
+        "fetch": {
+          "type": "object",
+          "description": "Fetch a specific commentlint ref (tag or commit SHA) as a runnable source tree instead of using the bundled/system Python install.",
+          "additionalProperties": true,
+          "properties": {
+            "ref": {
+              "type": "string",
+              "description": "Git ref (tag or commit SHA) to fetch and run."
+            }
+          }
+        },
+        "preferSystem": {
+          "type": "boolean",
+          "description": "Prefer a system-installed commentlint over the npm-managed Python venv."
+        }
+      }
+    },
+    "markdown": {
+      "type": "boolean",
+      "description": "Scan .md/.markdown files during directory walks. The shipped model was trained on code comments, so a markdown finding is reported as experimental."
+    },
+    "markdownFiles": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Always check these markdown files, regardless of \"markdown\". They ride along with a walk -- the default scan root or an explicit directory -- added on top of it rather than in place of it. Once this is non-empty, \"markdown\" no longer opts every .md/.markdown file in the tree into the walk -- only the files named here are checked. Naming specific files on the command line, with no directory among them, restricts the scan to exactly those files instead; this list does not ride along with that."
+    },
+    "splitSentences": {
+      "type": "boolean",
+      "description": "Score each sentence of a prose comment or markdown chunk on its own, instead of scoring the whole comment as one unit. A comment that mixes one bad sentence into several good ones is otherwise judged by its average, which can wash the bad sentence out."
+    },
+    "disableRules": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[CP][0-9]+$" },
+      "description": "Rule ids never to report. The gate that decides whether a comment is flagged at all still runs over every rule; disabling one only changes which rule a finding is named after."
+    },
+    "enableRules": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[CP][0-9]+$" },
+      "description": "Rule ids to turn back on even though they ship off by default (C10, C11, C13 -- style calls the taxonomy can't settle for every codebase)."
+    },
+    "unicodeWhitelist": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^U\\+[0-9A-Fa-f]{4,6}(-U\\+[0-9A-Fa-f]{4,6})?$"
+      },
+      "description": "Codepoints and ranges that rule C13 (no non-Latin-1 characters in a comment) lets through. Each entry is either \"U+XXXX\" for one codepoint or \"U+XXXX-U+YYYY\" for an inclusive range. C13 ships off by default, so this only matters once it is turned on with enableRules."
+    },
+    "languageExtensions": {
+      "type": "object",
+      "description": "Extra file extensions for the three supported language families, on top of their built-in defaults (\"c-style\": .ts/.tsx/.js/.jsx/.mjs/.cjs/.mts/.cts, \"python-style\": .py/.pyi, \"markdown\": .md/.markdown). An extension can belong to only one family. \"c-style\" reuses the TS/JS extractor, which is a fair stand-in for other // and /* */ languages.",
+      "additionalProperties": false,
+      "properties": {
+        "c-style": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^\\.\\S+$" }
+        },
+        "python-style": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^\\.\\S+$" }
+        },
+        "markdown": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^\\.\\S+$" }
+        }
+      }
+    },
+    "extends": {
+      "type": "string",
+      "description": "Inherit from another config file; this file's own keys win over the parent's. A \"//\"-prefixed path resolves from the git repository root, the same as \"model\" and \"markdownFiles\"."
+    }
+  }
+}

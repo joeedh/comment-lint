@@ -86,6 +86,13 @@ comments are allowed outside string literals and are stripped before parsing:
 these keys present, commented out, and explained; uncomment the ones a project wants to set. It
 refuses to run over an existing config rather than overwrite it.
 
+The written file also gets an uncommented `$schema` key, pinned to the installed version, so
+editors that understand JSON Schema (VS Code's built-in JSON support, for one) offer
+autocomplete and hover docs while editing it. A hand-written config gets the same support by
+adding `"$schema": "https://raw.githubusercontent.com/joeedh/comment-lint/v<version>/schema/commentlintrc.schema.json"`,
+matched to the installed commentlint version. `.commentlintrc.jsonc` needs the file associated
+as JSONC in the editor for its comments to parse alongside the schema.
+
 An unknown key or a value of the wrong type fails the run rather than being ignored, so a
 typo in the config surfaces immediately instead of silently falling back to a default. A CLI
 flag always wins over the matching config key, and `--config` points at a specific file when

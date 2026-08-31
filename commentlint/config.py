@@ -27,9 +27,12 @@ import os
 import subprocess
 from typing import Any
 
+from . import __version__
 from . import rules as rules_mod
 from . import unicode_whitelist
 from .comments import FAMILIES
+
+SCHEMA_URL_TEMPLATE = "https://raw.githubusercontent.com/joeedh/comment-lint/v{version}/schema/commentlintrc.schema.json"
 
 CONFIG_NAME = ".commentlintrc.json"
 CONFIG_NAME_JSONC = ".commentlintrc.jsonc"
@@ -195,6 +198,7 @@ def load(path: str, _seen: frozenset[str] = frozenset()) -> dict[str, Any]:
         raise ConfigError(f"{path}: {e}") from e
     if not isinstance(data, dict):
         raise ConfigError(f"{path}: expected a JSON object")
+    data.pop("$schema", None)
 
     unknown = sorted(set(data) - set(KEYS))
     if unknown:
@@ -343,8 +347,16 @@ DEFAULT_CONFIG = """{
 
 
 def write_default(path: str) -> None:
-    """Write DEFAULT_CONFIG to `path`, refusing to overwrite an existing file."""
+    """Write DEFAULT_CONFIG to `path`, refusing to overwrite an existing file.
+
+    A real, uncommented "$schema" line is inserted ahead of the template body,
+    pinned to this install's version, so the emitted file gets editor
+    autocomplete without needing `$schema` in `KEYS` or in the fully-commented
+    `DEFAULT_CONFIG` template itself.
+    """
     if os.path.exists(path):
         raise ConfigError(f"{path}: already exists")
+    schema_line = f'  "$schema": "{SCHEMA_URL_TEMPLATE.format(version=__version__)}"\n'
+    content = DEFAULT_CONFIG.replace("{\n", "{\n" + schema_line, 1)
     with open(path, "w", encoding="utf-8", newline="\n") as f:
-        f.write(DEFAULT_CONFIG)
+        f.write(content)

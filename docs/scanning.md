@@ -94,7 +94,11 @@ One config per run — there are no per-file `overrides`.
 Keys: `threshold` `limit` `minLength` `exclude` `ignorePath` `withNodeModules` `cache`
 `cacheStrategy` `backend` `model` `disableRules` `enableRules` `unicodeWhitelist` `extends`.
 An unknown key is an error, not a shrug. `commentlint --init` writes a `.commentlintrc.json`
-with every key listed, commented out, and explained.
+with every key listed, commented out, and explained, plus an uncommented `$schema` key
+pinned to the installed version, at `schema/commentlintrc.schema.json` in this repo. `load()`
+strips `$schema` before the unknown-key check, so it needs no entry in `KEYS`. A hand-written
+config points at the same schema for editor autocomplete by adding
+`"$schema": "https://raw.githubusercontent.com/joeedh/comment-lint/v<version>/schema/commentlintrc.schema.json"`.
 
 `extends` names a parent config to inherit from, with this config's own keys applied over
 it. A plain path resolves relative to the config file's own directory, the same as `model`

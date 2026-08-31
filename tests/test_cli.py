@@ -803,3 +803,24 @@ class TestInit:
     def test_every_config_key_appears_commented_out(self):
         keys_in_template = set(re.findall(r'// "(\w+)":', config_mod.DEFAULT_CONFIG))
         assert keys_in_template == set(config_mod.KEYS)
+
+    def test_written_config_has_schema_pinned_to_this_version(self, tmp_path, monkeypatch):
+        from commentlint import __version__
+
+        monkeypatch.chdir(tmp_path)
+        main(["--init"])
+        text = (tmp_path / ".commentlintrc.json").read_text(encoding="utf-8")
+        assert f'"$schema": "https://raw.githubusercontent.com/joeedh/comment-lint/v{__version__}/schema/commentlintrc.schema.json"' in text
+
+
+class TestSchema:
+    def test_schema_properties_match_config_keys(self):
+        import os
+
+        schema_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "schema", "commentlintrc.schema.json",
+        )
+        with open(schema_path, encoding="utf-8") as f:
+            schema = json.load(f)
+        assert set(schema["properties"]) - {"$schema"} == set(config_mod.KEYS)
