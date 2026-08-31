@@ -5,7 +5,7 @@ the whole point of the tool is to run from inside some other project.
 """
 import os
 
-__version__ = "0.3.7"
+__version__ = "0.4.0"
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RULES_PATH = os.path.join(ROOT, "data", "rules.json")
