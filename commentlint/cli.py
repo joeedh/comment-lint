@@ -11,6 +11,7 @@ everything over a cut. Over 6000 real comments the calibrated 0.50 cut yields
 poor in the middle, so a ranked list is honest where a flat dump is not.
 """
 import argparse
+import dataclasses
 import json
 import os
 import sys
@@ -25,6 +26,7 @@ from . import rules as rules_mod
 from . import unicode_whitelist
 from .comments import DEFAULT_WALK_FAMILIES, EXTENSIONS, FAMILIES, UnparseableSource, extract_file
 from .comments import filters
+from .comments import sentences as sentences_mod
 from .comments.base import Comment
 from .discover import discover
 
@@ -39,6 +41,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="commentlint",
         description="Flag code comments that break the project's comment rules.",
+        # a flag typo one letter short of a real one (--split-sentence for
+        # --split-sentences) is otherwise accepted as an unambiguous prefix
+        # match and silently changes behavior instead of erroring
+        allow_abbrev=False,
     )
     p.add_argument("paths", nargs="*", help="files, directories or globs to scan")
     p.add_argument("--text", help="score this literal comment text instead of scanning")
@@ -61,6 +67,9 @@ def build_parser() -> argparse.ArgumentParser:
                         "--with-node-modules, this also scans vendored markdown)")
     p.add_argument("--markdown-file", action="append", default=[], dest="markdown_files", metavar="PATH",
                    help="always check this markdown file, regardless of --markdown; repeatable")
+    p.add_argument("--split-sentences", action="store_true",
+                   help="score each sentence of a comment or markdown chunk on its own, "
+                        "instead of the comment as a whole")
     p.add_argument("--no-cache", action="store_true", help="do not read or write the cache")
     p.add_argument("--cache-location", help="where the cache lives")
     p.add_argument("--cache-strategy", choices=["metadata", "content"], help="default metadata")
@@ -118,6 +127,7 @@ class Options:
         self.unicode_whitelist = unicode_whitelist.parse(cfg.get("unicodeWhitelist", []))
         self.markdown = pick("markdown", "markdown", False)
         self.markdown_files = list(args.markdown_files) + list(cfg.get("markdownFiles", []))
+        self.split_sentences = pick("split_sentences", "splitSentences", False)
         self.language_extensions: dict[str, list[str]] = cfg.get("languageExtensions", {})
         self.cache = False if args.no_cache else cfg.get("cache", True)
         self.cache_strategy = pick("cache_strategy", "cacheStrategy", "metadata")
@@ -145,6 +155,28 @@ def looks_like_path(arg: str, extra_extensions: frozenset[str] = frozenset()) ->
     return not any(c.isspace() for c in arg)
 
 
+def parse_args(argv: list[str] | None) -> argparse.Namespace:
+    """Parse argv, folding a second run of bare positionals back into `paths`.
+
+    `paths` is `nargs="*"`, and argparse only binds one contiguous run of
+    positional-looking tokens to it per parse -- a token-matching limitation
+    of argparse itself (https://bugs.python.org/issue14191), not something
+    fixable by reordering this parser's own add_argument calls. A path that
+    lands on the far side of an option that takes a value, e.g.
+    `commentlint a.ts --threshold 0.7 b.ts`, is left out of `args.paths`
+    entirely rather than merged in. `parse_known_args` surfaces that second
+    run as leftovers, and every leftover here is either such an orphaned path
+    or a genuinely unknown flag; only the latter is still an error.
+    """
+    parser = build_parser()
+    args, extra = parser.parse_known_args(argv)
+    unknown = [e for e in extra if e.startswith("-") and e != "-"]
+    if unknown:
+        parser.error(f"unrecognized arguments: {' '.join(unknown)}")
+    args.paths = args.paths + [e for e in extra if e not in unknown]
+    return args
+
+
 def main(argv: list[str] | None = None) -> int:
     # comments in this corpus are 25% em-dash; the Windows console default
     # codepage turns those into replacement characters
@@ -155,7 +187,7 @@ def main(argv: list[str] | None = None) -> int:
             except (ValueError, OSError):
                 pass
 
-    args = build_parser().parse_args(argv)
+    args = parse_args(argv)
     if args.init:
         return run_init(args)
     try:
@@ -330,15 +362,23 @@ def run_scan(args: argparse.Namespace, opts: Options) -> int:
     started = time.time()
     skipped: list[tuple[str, str]] = []
 
+    # markdownFiles only rides along with a walk (the default root, an
+    # explicit directory, or a glob): naming specific files on argv is the
+    # user restricting the scan to exactly those files, and pulling in an
+    # unrelated whitelist entry on top would silently widen a targeted scan
+    # back out to the whole project.
+    paths_are_all_files = bool(args.paths) and all(os.path.isfile(p) for p in args.paths)
+
     # a stale markdownFiles entry is not the user's typo on argv, so it is
     # reported as a skip rather than raised through discover() and aborting
     # the whole run
     markdown_files = []
-    for p in opts.markdown_files:
-        if os.path.isfile(p):
-            markdown_files.append(p)
-        else:
-            skipped.append((p, "no such file"))
+    if not paths_are_all_files:
+        for p in opts.markdown_files:
+            if os.path.isfile(p):
+                markdown_files.append(p)
+            else:
+                skipped.append((p, "no such file"))
 
     # custom c-style/python-style extensions join the walk unconditionally, the
     # same as their built-in defaults; custom markdown extensions are gated by
@@ -379,6 +419,7 @@ def run_scan(args: argparse.Namespace, opts: Options) -> int:
             "backend": opts.backend, "top": args.top,
             "markdown": opts.markdown,
             "markdown_files": tuple(sorted(opts.markdown_files)),
+            "split_sentences": opts.split_sentences,
             "language_extensions": tuple(sorted(
                 (family, tuple(sorted(exts))) for family, exts in opts.language_extensions.items()
             )),
@@ -428,7 +469,13 @@ def run_scan(args: argparse.Namespace, opts: Options) -> int:
                 if bad:
                     per_file[path].append(_finding_unicode(c, bad))
                     continue
-            pending.append((path, c))
+            if opts.split_sentences:
+                for sentence in sentences_mod.split(c.text):
+                    if len(sentence) < opts.min_length:
+                        continue
+                    pending.append((path, dataclasses.replace(c, text=sentence)))
+            else:
+                pending.append((path, c))
 
     if pending:
         from .backends import load
@@ -459,6 +506,8 @@ def run_scan(args: argparse.Namespace, opts: Options) -> int:
             finding = _finding(c, ranked[0][0], gate, ranked, source)  # type: ignore[arg-type]
             if source == "model-markdown":
                 finding["experimental"] = True
+            if opts.split_sentences:
+                finding["sentence"] = True
             per_file[path].append(finding)
 
     for path in fresh:

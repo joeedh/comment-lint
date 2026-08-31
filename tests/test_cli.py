@@ -296,6 +296,42 @@ class TestScanThreshold:
         assert "cut 0.55" in out
 
 
+class TestPathsAroundOptions:
+    """A value-taking option splits `paths` into two argparse runs; both must survive.
+
+    https://bugs.python.org/issue14191: argparse only binds one contiguous run
+    of positional-looking tokens to a `nargs="*"` positional per parse, so
+    `a.ts --threshold 0.7 b.ts` used to drop b.ts as an "unrecognized argument".
+    """
+
+    def test_a_path_after_a_value_taking_option_is_not_dropped(self, project, capsys):
+        code, out = run(["a.ts", "--threshold", "0.01", "b.ts", "--json"], capsys)
+        paths = {f["path"] for f in json.loads(out)["files"]}
+        assert paths == {"a.ts", "b.ts"}
+        assert code == EXIT_FINDINGS
+
+    def test_paths_on_both_sides_of_two_options_all_survive(self, project, capsys):
+        (project / "c.ts").write_text(PLAIN, encoding="utf-8")
+        code, out = run(["a.ts", "--threshold", "0.01", "b.ts", "--limit", "5", "c.ts", "--json"], capsys)
+        paths = {f["path"] for f in json.loads(out)["files"]}
+        assert "a.ts" in paths
+
+    def test_a_genuinely_unknown_flag_still_errors(self, project, capsys):
+        with pytest.raises(SystemExit) as exc:
+            main(["a.ts", "--not-a-real-flag", "b.ts", "--no-cache"])
+        assert exc.value.code == EXIT_USAGE
+        assert "--not-a-real-flag" in capsys.readouterr().err
+
+    def test_a_flag_typo_that_is_a_prefix_of_a_real_flag_still_errors(self, project, capsys):
+        """argparse abbreviates unambiguous prefixes by default, so a typo one
+        letter short of --split-sentences would otherwise be silently accepted
+        as that flag instead of reported as unrecognized."""
+        with pytest.raises(SystemExit) as exc:
+            main(["a.ts", "--split-sentence", "--no-cache"])
+        assert exc.value.code == EXIT_USAGE
+        assert "--split-sentence" in capsys.readouterr().err
+
+
 class TestArgumentDisambiguation:
     def test_a_path_that_exists_is_a_path(self, project):
         assert looks_like_path("a.ts")
@@ -481,6 +517,27 @@ class TestMarkdown:
         _, out = run(["notes.md", "--threshold", "0.01"], capsys)
         assert "notes.md" in out
 
+    def test_naming_one_file_does_not_pull_in_unrelated_markdown_files(self, project, capsys):
+        """markdownFiles is a whitelist for a walk, not a standing addendum to
+        every invocation -- naming a specific file on argv restricts the scan
+        to that file, the same as it would with no markdownFiles configured."""
+        (project / "wanted.md").write_text(self.PROSE, encoding="utf-8")
+        (project / ".commentlintrc.json").write_text(
+            json.dumps({"markdownFiles": ["wanted.md"]}), encoding="utf-8",
+        )
+        _, out = run(["a.ts", "--json", "--threshold", "0.01"], capsys)
+        paths = {f["path"] for f in json.loads(out)["files"]}
+        assert paths == {"a.ts"}
+
+    def test_naming_a_directory_still_pulls_in_markdown_files(self, project, capsys):
+        (project / "wanted.md").write_text(self.PROSE, encoding="utf-8")
+        (project / ".commentlintrc.json").write_text(
+            json.dumps({"markdownFiles": ["wanted.md"]}), encoding="utf-8",
+        )
+        _, out = run([".", "--json", "--threshold", "0.01"], capsys)
+        paths = {f["path"] for f in json.loads(out)["files"]}
+        assert any(p.endswith("wanted.md") for p in paths)
+
     def test_banner_prints_only_when_a_markdown_finding_exists(self, project, capsys):
         _, clean_out = run([".", "--threshold", "0.01"], capsys)
         assert "experimental" not in clean_out
@@ -488,6 +545,49 @@ class TestMarkdown:
         (project / "notes.md").write_text(self.PROSE, encoding="utf-8")
         _, md_out = run(["notes.md", "--threshold", "0.01"], capsys)
         assert "experimental" in md_out
+
+
+class TestSplitSentences:
+    TWO_SENTENCES = (
+        "// The leak scan is the refusal, and the refusal is what the caller reads back. "
+        "This second sentence is just plain filler text about counters and loops.\n"
+    )
+
+    def test_off_by_default_scores_the_whole_comment(self, project, capsys):
+        (project / "s.ts").write_text(self.TWO_SENTENCES, encoding="utf-8")
+        _, out = run(["s.ts", "--json", "--threshold", "0.01"], capsys)
+        findings = [f for fl in json.loads(out)["files"] for f in fl["findings"]]
+        assert findings
+        assert "sentence" not in findings[0]
+        assert findings[0]["text"] == self.TWO_SENTENCES.strip("/ \n")
+
+    def test_split_sentences_flag_scores_each_sentence_on_its_own(self, project, capsys):
+        (project / "s.ts").write_text(self.TWO_SENTENCES, encoding="utf-8")
+        _, out = run(["s.ts", "--split-sentences", "--json", "--threshold", "0.01"], capsys)
+        findings = [f for fl in json.loads(out)["files"] for f in fl["findings"]]
+        assert findings
+        for f in findings:
+            assert f["sentence"] is True
+            assert f["text"] != self.TWO_SENTENCES.strip("/ \n")
+            assert f["text"] in (
+                "The leak scan is the refusal, and the refusal is what the caller reads back.",
+                "This second sentence is just plain filler text about counters and loops.",
+            )
+
+    def test_split_sentences_via_config_also_works(self, project, capsys):
+        (project / "s.ts").write_text(self.TWO_SENTENCES, encoding="utf-8")
+        (project / ".commentlintrc.json").write_text('{"splitSentences": true}', encoding="utf-8")
+        _, out = run(["s.ts", "--json", "--threshold", "0.01"], capsys)
+        findings = [f for fl in json.loads(out)["files"] for f in fl["findings"]]
+        assert findings
+        assert all(f.get("sentence") for f in findings)
+
+    def test_a_short_sentence_is_dropped_by_min_length(self, project, capsys):
+        text = "// A perfectly fine long lead-in sentence goes here for length. No.\n"
+        (project / "s.ts").write_text(text, encoding="utf-8")
+        _, out = run(["s.ts", "--split-sentences", "--json", "--threshold", "0.01"], capsys)
+        findings = [f for fl in json.loads(out)["files"] for f in fl["findings"]]
+        assert all(f["text"] != "No." for f in findings)
 
 
 class TestLanguageExtensions:

@@ -51,6 +51,7 @@ KEYS: dict[str, type] = {
     "npm": dict,
     "markdown": bool,
     "markdownFiles": list,
+    "splitSentences": bool,
     "disableRules": list,
     "enableRules": list,
     "unicodeWhitelist": list,
@@ -293,11 +294,20 @@ DEFAULT_CONFIG = """{
   // experimental.
   // "markdown": false,
 
-  // Always check these markdown files, regardless of "markdown". They are
-  // added on top of the normal scan, not in place of it. Once this is
-  // non-empty, "markdown" no longer opts every .md/.markdown file in the
-  // tree into the walk -- only the files named here are checked.
+  // Always check these markdown files, regardless of "markdown". They ride
+  // along with a walk -- the default scan root or an explicit directory --
+  // added on top of it rather than in place of it. Once this is non-empty,
+  // "markdown" no longer opts every .md/.markdown file in the tree into the
+  // walk -- only the files named here are checked. Naming specific files on
+  // the command line, with no directory among them, restricts the scan to
+  // exactly those files instead; this list does not ride along with that.
   // "markdownFiles": ["CLAUDE.md"],
+
+  // Score each sentence of a prose comment or markdown chunk on its own,
+  // instead of scoring the whole comment as one unit. A comment that mixes
+  // one bad sentence into several good ones is otherwise judged by its
+  // average, which can wash the bad sentence out.
+  // "splitSentences": false,
 
   // Rule ids never to report. The gate that decides whether a comment is
   // flagged at all still runs over every rule; disabling one only changes
