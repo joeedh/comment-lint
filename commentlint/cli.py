@@ -22,6 +22,7 @@ from . import ENCODER_DIR, LINEAR_DIR, __version__
 from . import cache as cache_mod
 from . import config as config_mod
 from . import feedback as feedback_mod
+from . import premise
 from . import rules as rules_mod
 from . import unicode_whitelist
 from .comments import DEFAULT_WALK_FAMILIES, EXTENSIONS, FAMILIES, UnparseableSource, extract_file
@@ -264,20 +265,31 @@ def run_single(text: str, args: argparse.Namespace, opts: Options) -> int:
              if backend.labels[i] not in opts.disable_rules]
     ranked = [(backend.labels[i], probs[i]) for i in (order if args.all else order[: args.top])]
 
+    # The deterministic checkers run here too, so one comment gets the same verdict
+    # from --text as from a scan. A checker firing is a finding whatever the gate says.
+    spans = [] if premise.RULE in opts.disable_rules else premise.supporting_premise(text)
+    flagged = gate is not None and gate >= cut
+
     if args.as_json:
         json.dump({"text": text, "gate": gate, "cut": cut,
-                   "ranked": [{"rule": r, "score": p} for r, p in ranked]}, sys.stdout, indent=1)
+                   "ranked": [{"rule": r, "score": p} for r, p in ranked],
+                   "heuristics": [{"rule": premise.RULE, "clauses": [" ".join(s.clause.split()) for s in spans]}]
+                   if spans else []}, sys.stdout, indent=1)
         print()
     else:
-        if gate is None:
+        # Prints one verdict line. A checker firing makes the verdict VIOLATION
+        # whatever the gate scored, and the gate's number stays visible beside it.
+        if gate is None and not spans:
             print(f"{backend.name} backend has no gate; showing ranked rules only")
-        elif gate >= cut:
-            print(f"VIOLATION  {gate:.2f} (cut {cut:.2f})")
+        elif flagged or spans:
+            print(f"VIOLATION  {gate:.2f} (cut {cut:.2f})" if gate is not None else "VIOLATION  flag")
         else:
             print(f"clean      {gate:.2f} (cut {cut:.2f})")
+        for s in spans:
+            print(f"  {_display_rule(premise.RULE):8s} flag  {' '.join(s.clause.split())}")
         for rule_id, prob in ranked:
             print(f"  {_display_rule(rule_id):8s} {prob:.2f}  {rule_desc.get(rule_id, '')[:90]}")
-    return EXIT_FINDINGS if (gate is not None and gate >= cut) else EXIT_CLEAN
+    return EXIT_FINDINGS if (flagged or spans) else EXIT_CLEAN
 
 
 def run_feedback(args: argparse.Namespace, kind: str, text: str) -> int:
@@ -425,6 +437,7 @@ def run_scan(args: argparse.Namespace, opts: Options) -> int:
             )),
             "disable_rules": tuple(sorted(opts.disable_rules)),
             "unicode_whitelist": tuple(sorted(opts.unicode_whitelist)),
+            "checks": premise.CHECK_VERSION,
         }),
         strategy=opts.cache_strategy,
         enabled=opts.cache,
@@ -468,6 +481,14 @@ def run_scan(args: argparse.Namespace, opts: Options) -> int:
                 bad = filters.disallowed_codepoints(c.text, opts.unicode_whitelist)
                 if bad:
                     per_file[path].append(_finding_unicode(c, bad))
+                    continue
+            # P14's checker is deterministic and runs on prose of either kind. A
+            # comment it flags is not also scored, like C2 and C13: one hard finding
+            # per comment, and the model's suspicion would only be printed beside it.
+            if premise.RULE not in opts.disable_rules:
+                spans = premise.supporting_premise(c.text)
+                if spans:
+                    per_file[path].append(_finding_premise(c, spans))
                     continue
             if opts.split_sentences:
                 for sentence in sentences_mod.split(c.text):
@@ -541,6 +562,12 @@ def _finding(
 def _finding_unicode(c: Comment, codepoints: list[int]) -> cache_mod.Finding:
     finding = _finding(c, UNICODE_RULE, 1.0, [(UNICODE_RULE, 1.0)], "heuristic")
     finding["codepoints"] = [f"U+{cp:04X}" for cp in codepoints]
+    return finding
+
+
+def _finding_premise(c: Comment, spans: list[premise.Span]) -> cache_mod.Finding:
+    finding = _finding(c, premise.RULE, 1.0, [(premise.RULE, 1.0)], "heuristic")
+    finding["clauses"] = [" ".join(s.clause.split()) for s in spans]
     return finding
 
 
@@ -726,6 +753,8 @@ def _print_ts(by_file: dict[str, list[cache_mod.Finding]], use_color: bool) -> N
             if f.get("codepoints"):
                 chars = ", ".join(f"{cp} ({chr(int(cp[2:], 16))})" for cp in f["codepoints"])
                 print(f"{c.dim}    non-Latin-1: {chars}{c.reset}")
+            for clause in f.get("clauses", []):
+                print(f"{c.dim}    supporting premise coordinated as a peer: {clause}{c.reset}")
             print()
 
 

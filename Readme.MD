@@ -118,6 +118,16 @@ request. `--list-rules` marks each rule that is off in the resolved config with 
 `unicodeWhitelist` names codepoints and ranges it lets through: `"U+2014"` for one codepoint,
 `"U+2018-U+201F"` for an inclusive range, checked once `C13` is enabled.
 
+`P14` (bracket a supporting premise) has a deterministic checker as well as its taxonomy
+entry, on by default. It fires on one shape only: a copular first clause ("X is Y")
+followed by a clause coordinated with `and` before a `, so` conclusion whose subject is a
+bare pronoun, as in "Building the playable is the question, and it is pure, so ...". After
+a copula the pronoun continues X whichever side of the copula it points at; after any
+other verb it may point at the object, so the checker stays silent. The finding names the
+clause. The rest of P14 has no checker, because a gloss about the first clause's object
+reads identically to a correctly coordinated peer premise;
+docs/research/p14-bracket-supporting-premise.md has the measurements.
+
 ### Language families
 
 commentlint extracts comments through three extractors: `c-style` (a state machine written for

@@ -824,3 +824,104 @@ class TestSchema:
         with open(schema_path, encoding="utf-8") as f:
             schema = json.load(f)
         assert set(schema["properties"]) - {"$schema"} == set(config_mod.KEYS)
+
+
+class TestPremiseRule:
+    """Rule P14's deterministic checker, on by default and a hard finding like C2."""
+
+    TEXT = ("// Building the playable is the question, and it is pure and writes nothing, so\n"
+            "// the check answers with the real projection rather than a guess.\n")
+    PEER = ("// Undo restores a git snapshot of the workspace, and a browser preview has no\n"
+            "// workspace, so both controls stay disabled here.\n")
+
+    def test_fires_by_default_and_fails_the_run(self, project, capsys):
+        (project / "p.ts").write_text(self.TEXT, encoding="utf-8")
+        code, out = run(["p.ts", "--threshold", "0.99"], capsys)
+        assert code == EXIT_FINDINGS
+        assert "ruleP14" in out
+        assert "supporting premise coordinated as a peer: , and it is pure and writes nothing, so" in out
+
+    def test_peer_premise_is_not_flagged(self, project, capsys):
+        (project / "p.ts").write_text(self.PEER, encoding="utf-8")
+        code, out = run(["p.ts", "--threshold", "0.99"], capsys)
+        assert code == EXIT_CLEAN
+        assert "ruleP14" not in out
+
+    def test_disable_rule_suppresses_it(self, project, capsys):
+        (project / "p.ts").write_text(self.TEXT, encoding="utf-8")
+        code, out = run(["p.ts", "--threshold", "0.99", "--disable-rule", "P14"], capsys)
+        assert code == EXIT_CLEAN
+        assert "ruleP14" not in out
+
+    def test_json_finding_carries_clauses_and_heuristic_source(self, project, capsys):
+        (project / "p.ts").write_text(self.TEXT, encoding="utf-8")
+        _, out = run(["p.ts", "--json", "--threshold", "0.99"], capsys)
+        findings = [f for fl in json.loads(out)["files"] for f in fl["findings"]]
+        finding = next(f for f in findings if f["rule"] == "P14")
+        assert finding["source"] == "heuristic"
+        assert finding["clauses"] == [", and it is pure and writes nothing, so"]
+
+    def test_concise_tag_is_flag(self, project, capsys):
+        (project / "p.ts").write_text(self.TEXT, encoding="utf-8")
+        _, out = run(["p.ts", "--threshold", "0.99", "--concise"], capsys)
+        assert "flag" in out
+
+    def test_text_mode_fires_and_exits_one(self, capsys):
+        text = self.TEXT.replace("// ", "").replace("\n", " ").strip()
+        code = main(["--text", text, "--threshold", "0.99"])
+        out = capsys.readouterr().out
+        assert code == EXIT_FINDINGS
+        assert "ruleP14" in out
+
+    def test_text_mode_json_lists_the_heuristic(self, capsys):
+        text = self.TEXT.replace("// ", "").replace("\n", " ").strip()
+        code = main(["--text", text, "--json", "--threshold", "0.99"])
+        data = json.loads(capsys.readouterr().out)
+        assert code == EXIT_FINDINGS
+        assert data["heuristics"] == [{"rule": "P14", "clauses": [", and it is pure and writes nothing, so"]}]
+
+    def test_text_mode_disable_rule_restores_the_gate_verdict(self, capsys):
+        text = self.TEXT.replace("// ", "").replace("\n", " ").strip()
+        code = main(["--text", text, "--json", "--threshold", "0.99", "--disable-rule", "P14"])
+        data = json.loads(capsys.readouterr().out)
+        assert code == EXIT_CLEAN
+        assert data["heuristics"] == []
+
+    def test_text_mode_prints_one_verdict_line(self, capsys):
+        text = self.TEXT.replace("// ", "").replace("\n", " ").strip()
+        main(["--text", text, "--threshold", "0.99"])
+        out = capsys.readouterr().out
+        assert out.count("VIOLATION") == 1
+        assert "clean" not in out
+        assert "ruleP14  flag  , and it is pure and writes nothing, so" in out
+
+    def test_flagged_comment_is_not_also_scored_by_the_model(self, project, capsys):
+        (project / "p.ts").write_text(self.TEXT, encoding="utf-8")
+        _, out = run(["p.ts", "--json", "--threshold", "0.0"], capsys)
+        findings = [f for fl in json.loads(out)["files"] for f in fl["findings"]]
+        assert [f["rule"] for f in findings] == ["P14"]
+
+    def test_markdown_prose_reaches_the_checker(self, project, capsys):
+        body = self.TEXT.replace("// ", "").replace("\n", " ").strip()
+        (project / "notes.md").write_text(f"# Notes\n\n{body}\n", encoding="utf-8")
+        _, out = run(["notes.md", "--json", "--threshold", "0.99"], capsys)
+        findings = [f for fl in json.loads(out)["files"] for f in fl["findings"]]
+        finding = next(f for f in findings if f["rule"] == "P14")
+        assert finding["source"] == "heuristic"
+        assert "experimental" not in finding
+
+    def test_check_version_is_part_of_the_cache_key(self):
+        from commentlint import cache as cache_mod
+        from commentlint import premise
+        base = {"cut": 0.5, "checks": premise.CHECK_VERSION}
+        bumped = {"cut": 0.5, "checks": premise.CHECK_VERSION + 1}
+        assert cache_mod.run_key(LINEAR_DIR, base) != cache_mod.run_key(LINEAR_DIR, bumped)
+
+    def test_split_sentences_still_reports_the_comment_once(self, project, capsys):
+        # the chain is sentence-local, so the checker runs on the whole comment; the
+        # flagged comment is then not scored sentence by sentence either
+        text = ("// The first sentence here is a plain one about the cache.\n" + self.TEXT)
+        (project / "p.ts").write_text(text, encoding="utf-8")
+        _, out = run(["p.ts", "--json", "--split-sentences", "--threshold", "0.0"], capsys)
+        findings = [f for fl in json.loads(out)["files"] for f in fl["findings"]]
+        assert [f["rule"] for f in findings] == ["P14"]

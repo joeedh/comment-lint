@@ -16,11 +16,20 @@ _PLACEHOLDER = "\0"
 _BOUNDARY = re.compile(r"(?<=[.!?])[\"')\]]?\s+(?=[A-Z0-9\"'(])")
 
 
+def protect(text: str) -> str:
+    """Returns `text` with each abbreviation's period swapped for a same-length placeholder.
+
+    The result lines up with `text` character for character, so a caller that needs
+    offsets can split the protected copy and index the original.
+    """
+    return _ABBREV.sub(lambda m: m.group(0).replace(".", _PLACEHOLDER), text)
+
+
 def split(text: str) -> list[str]:
     """Sentences in `text`, in reading order, each collapsed to single-spaced prose."""
     text = " ".join(text.split())
     if not text:
         return []
-    protected = _ABBREV.sub(lambda m: m.group(0).replace(".", _PLACEHOLDER), text)
+    protected = protect(text)
     parts = _BOUNDARY.split(protected)
     return [p.replace(_PLACEHOLDER, ".").strip() for p in parts if p.strip()]

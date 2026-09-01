@@ -11,6 +11,12 @@ missing label for a bootstrap classifier.
 Known, documented gap: C1/C3/C5/C6 need the code line(s) beneath the
 comment, which this comment-only dataset never captured. They get zero
 coverage here; fixing that requires a re-mine that keeps adjacent code.
+
+P14 has no heuristic on purpose. The ",  and <clause>,  so" chain shape it
+targets appears in 37 pairs' before-text, but none of those revisions fix it
+by bracketing the premise, so every candidate signature scores false
+positives against rewrites that only share the word "which" or a new
+parenthesis. P14 needs freshly authored pairs before it can be labelled.
 """
 import json
 import re

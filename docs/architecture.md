@@ -64,6 +64,7 @@ the cache sits where it does and why the module boundaries fall where they do.
 | `commentlint/backends.py` | The only module that imports scikit-learn or torch |
 | `commentlint/rules.py` | Rule descriptions and calibrated cuts, readable without loading a model |
 | `commentlint/unicode_whitelist.py` | Parses rule C13's `unicodeWhitelist` config entries and tests codepoint membership |
+| `commentlint/premise.py` | Rule P14's deterministic checker for the one sub-case a regex can decide; runs on prose before the model, like C13, and is a hard finding |
 | `commentlint/feedback.py` | The false-negative ledger a user appends missed comments to |
 | `commentlint/comments/tsjs.py` | Character state machine over TS/JS source |
 | `commentlint/comments/pysrc.py` | `tokenize` for comments and `ast` for docstrings |

@@ -27,6 +27,7 @@
     {"id": "P10", "name": "no-rhetorical-emphasis", "desc": "Avoid bold/italic markup inside a sentence to mark emphasis; put the load-bearing claim first as plain text."},
     {"id": "P11", "name": "accurate-head-noun", "desc": "The sentence's head noun must be what the thing actually is; don't assert it's an X and then retract that through a preposition ('as commands')."},
     {"id": "P12", "name": "backticks-for-code-only", "desc": "Backticks are reserved for code symbols (identifiers, types, commands, file globs), not for a path or reference cited in prose."},
-    {"id": "P13", "name": "bracket-not-comma-alternative", "desc": "A subordinate alternative should be parenthesized, not fenced with paired commas which create ambiguity about clause boundaries."}
+    {"id": "P13", "name": "bracket-not-comma-alternative", "desc": "A subordinate alternative should be parenthesized, not fenced with paired commas which create ambiguity about clause boundaries."},
+    {"id": "P14", "name": "bracket-supporting-premise", "desc": "A clause that only supports a following 'so'/'therefore' conclusion must be bracketed or attached as a relative clause, not coordinated with 'and' as a peer assertion in the chain. The checker fires on one sub-case: the coordinated clause opens with a pronoun ('it', 'they', 'neither', ...) that continues the previous clause's subject."}
   ]
 }

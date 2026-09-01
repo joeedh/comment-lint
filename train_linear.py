@@ -37,20 +37,25 @@ from sklearn.metrics import precision_score, recall_score, roc_auc_score
 from sklearn.pipeline import FeatureUnion
 
 import train as T
+from commentlint import structure
 
 OUT_DIR = os.environ.get("CL_OUT", "model_linear")
+STRUCT = os.environ.get("CL_STRUCT") == "1"  # clause-structure features, experimental
 C = float(os.environ.get("CL_C", "1.0"))
 # the gate's masking and cut policy live in train.py so both models share one
 realistic_mask, calibrate_gate, scan_cut = T.realistic_mask, T.calibrate_gate, T.scan_cut
 
 
 def build_vectorizer() -> FeatureUnion:
-    return FeatureUnion(
-        [
-            ("word", TfidfVectorizer(ngram_range=(1, 2), min_df=2, sublinear_tf=True)),
-            ("char", TfidfVectorizer(analyzer="char_wb", ngram_range=(3, 5), min_df=3, sublinear_tf=True)),
-        ]
-    )
+    branches = [
+        ("word", TfidfVectorizer(ngram_range=(1, 2), min_df=2, sublinear_tf=True)),
+        ("char", TfidfVectorizer(analyzer="char_wb", ngram_range=(3, 5), min_df=3, sublinear_tf=True)),
+    ]
+    if STRUCT:
+        branches.append(
+            ("struct", TfidfVectorizer(analyzer=structure.tokens, min_df=2, sublinear_tf=True))
+        )
+    return FeatureUnion(branches)
 
 
 def fit_heads(
