@@ -84,9 +84,12 @@ to 0.70, which is the linear model's number and correct for nothing else.
 
 `--split-sentences` scores each sentence of a comment on its own, so a finding's text
 is one sentence rather than the whole comment. The default output still prints the
-comment around it, with the flagged sentence bolded where color is on and named on a
-`flagged sentence:` line where it is off. In `--json` the sentence stays under `text`
-and the comment it came from is added as `comment`.
+comment around it, with the flagged sentence bolded where color is on and wrapped in
+`[>` and `<]` where it is off, such as on a redirected or piped stdout. A run that
+brackets anything explains the brackets on one line before the first finding. A sentence
+the splitter reshaped past recognition cannot be marked in place, and is named on a
+`flagged sentence:` line under the comment instead. In `--json` the sentence stays under
+`text` and the comment it came from is added as `comment`.
 
 ## Config
 

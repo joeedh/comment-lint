@@ -9,8 +9,8 @@ from commentlint import ENCODER_DIR, LINEAR_DIR
 from commentlint import config as config_mod
 from commentlint import rules as rules_mod
 from commentlint.cli import (
-    EXIT_CLEAN, EXIT_FINDINGS, EXIT_USAGE, Options, _Colors, _comment_lines, _sentence_span,
-    build_parser, looks_like_path, main,
+    EXIT_CLEAN, EXIT_FINDINGS, EXIT_USAGE, SPAN_LEGEND, Options, _Colors, _comment_lines,
+    _sentence_span, build_parser, looks_like_path, main,
 )
 
 BAD = "// The leak scan is the refusal, and the refusal is what the caller reads back.\n"
@@ -597,12 +597,24 @@ class TestSplitSentences:
         assert findings
         assert all(f["comment"] == self.TWO_SENTENCES.strip("/ \n") for f in findings)
 
-    def test_text_output_prints_the_whole_comment_and_names_the_sentence(self, project, capsys):
+    def test_text_output_prints_the_whole_comment_and_brackets_the_sentence(self, project, capsys):
         (project / "s.ts").write_text(self.TWO_SENTENCES, encoding="utf-8")
         _, out = run(["s.ts", "--split-sentences", "--threshold", "0.01", "--limit", "1"], capsys)
         assert "The leak scan is the refusal" in out
         assert "This second sentence is just plain filler" in out
-        assert re.search(r"flagged sentence: (The leak scan|This second sentence)", out)
+        assert re.search(r"\[>(The leak scan|This second sentence)", out)
+        assert "flagged sentence:" not in out
+
+    def test_the_bracket_legend_is_printed_once_ahead_of_the_findings(self, project, capsys):
+        (project / "s.ts").write_text(self.TWO_SENTENCES, encoding="utf-8")
+        _, out = run(["s.ts", "--split-sentences", "--threshold", "0.01"], capsys)
+        assert out.count(SPAN_LEGEND) == 1
+        assert out.index(SPAN_LEGEND) < out.index("[>The")
+
+    def test_a_whole_comment_finding_gets_no_bracket_legend(self, project, capsys):
+        (project / "s.ts").write_text(self.TWO_SENTENCES, encoding="utf-8")
+        _, out = run(["s.ts", "--threshold", "0.01"], capsys)
+        assert SPAN_LEGEND not in out
 
     def test_color_output_bolds_the_flagged_sentence(self, project, capsys):
         (project / "s.ts").write_text(self.TWO_SENTENCES, encoding="utf-8")
@@ -610,6 +622,16 @@ class TestSplitSentences:
                       "--color"], capsys)
         assert re.search(r"\x1b\[1m(The leak scan|This second sentence)", out)
         assert "flagged sentence:" not in out
+        assert SPAN_LEGEND not in out
+        assert "[>" not in out
+
+    def test_a_sentence_over_two_lines_is_bracketed_once(self):
+        comment = "The leak scan is the refusal, and the refusal\nis what the caller reads back."
+        f = {"text": " ".join(comment.split()), "comment": comment}
+        assert _comment_lines(f, _Colors(False)) == [
+            "    [>The leak scan is the refusal, and the refusal",
+            "    is what the caller reads back.<]",
+        ]
 
     def test_a_sentence_split_over_two_lines_is_still_located(self):
         comment = "The leak scan is the refusal, and the refusal\nis what the caller reads back."

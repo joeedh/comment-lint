@@ -54,6 +54,16 @@ SPAN_LABELS = {
     interpolation.DASH_RULE: "interpolation fenced with dashes",
 }
 
+# Delimiters that stand in for bold where color is off, marking a
+# --split-sentences finding's sentence inside the comment printed around it.
+# Both are ASCII, so they survive a Latin-1 console, and the pair is asymmetric
+# and rare enough in prose and code that a reader will not mistake it for part
+# of the comment. Wiki-style [[ ]] and markdown's [!NOTE] were the collisions
+# to avoid.
+SPAN_OPEN = "[>"
+SPAN_CLOSE = "<]"
+SPAN_LEGEND = f"{SPAN_OPEN} ... {SPAN_CLOSE} marks the flagged sentence within the comment it came from."
+
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
@@ -781,6 +791,7 @@ def _print_ts(by_file: dict[str, list[cache_mod.Finding]], use_color: bool) -> N
     """
     rule_desc = rules_mod.descriptions()
     c = _Colors(use_color)
+    out: list[str] = []
     for p, fs in by_file.items():
         rel = _rel(p)
         for f in sorted(fs, key=lambda f: (f["line"], f["col"])):
@@ -788,16 +799,24 @@ def _print_ts(by_file: dict[str, list[cache_mod.Finding]], use_color: bool) -> N
             if f["end_line"] != f["line"] or f["end_col"] != f["col"]:
                 pos += f"-{f['end_line']}:{f['end_col']}"
             desc = rule_desc.get(f["rule"], "")
-            print(f"{c.bold_red}{rel}:{pos}{c.reset} - {c.bold_red}error{c.reset} "
-                  f"{c.cyan}{_display_rule(f['rule'])}{c.reset}: {desc}")
-            for line in _comment_lines(f, c):
-                print(line)
+            out.append(f"{c.bold_red}{rel}:{pos}{c.reset} - {c.bold_red}error{c.reset} "
+                       f"{c.cyan}{_display_rule(f['rule'])}{c.reset}: {desc}")
+            out.extend(_comment_lines(f, c))
             if f.get("codepoints"):
                 chars = ", ".join(f"{cp} ({chr(int(cp[2:], 16))})" for cp in f["codepoints"])
-                print(f"{c.dim}    non-Latin-1: {chars}{c.reset}")
+                out.append(f"{c.dim}    non-Latin-1: {chars}{c.reset}")
             for clause in f.get("clauses", []):
-                print(f"{c.dim}    {f.get('label') or SPAN_LABELS.get(f['rule'], 'flagged span')}: {clause}{c.reset}")
-            print()
+                out.append(f"{c.dim}    {f.get('label') or SPAN_LABELS.get(f['rule'], 'flagged span')}: "
+                           f"{clause}{c.reset}")
+            out.append("")
+    # The legend is printed once, ahead of the findings, and only when a bracket
+    # was actually written. A sentence the splitter reshaped past recognition
+    # gets a line of its own instead and needs no key.
+    if any(SPAN_OPEN in line for line in out):
+        print(SPAN_LEGEND + "\n")
+    for line in out:
+        print(line)
+
 
 def _sentence_span(text: str, sentence: str) -> tuple[int, int] | None:
     """Offsets of `sentence` within `text`, or None when it cannot be located.
@@ -819,8 +838,11 @@ def _comment_lines(f: cache_mod.Finding, c: _Colors) -> list[str]:
     A --split-sentences finding carries one sentence as its text and the comment
     that sentence came from under "comment". The sentence on its own drops the
     context a reader needs to judge it, so the whole comment is printed and the
-    sentence is bolded out of the dimmed rest. Where color is off the sentence
-    is named on a line of its own, since bolding is not available there.
+    sentence is bolded out of the dimmed rest. Where color is off the sentence is
+    wrapped in SPAN_OPEN and SPAN_CLOSE instead, which marks it in place rather
+    than repeating it under the comment. A sentence the splitter reshaped past
+    recognition cannot be marked either way, so it falls back to a line of its
+    own naming the sentence.
     """
     text = f.get("comment") or f["text"]
     span = _sentence_span(text, f["text"]) if f.get("comment") else None
@@ -828,19 +850,26 @@ def _comment_lines(f: cache_mod.Finding, c: _Colors) -> list[str]:
     if span is None:
         lines = [f"{c.dim}    {line}{c.reset}" for line in text.split("\n")]
     else:
+        brackets = not c.bold
         start, end = span
         pos = 0
         for line in text.split("\n"):
             line_start = pos
+            line_end = line_start + len(line)
             pos += len(line) + 1  # the newline the split consumed
             lo = max(start, line_start) - line_start
-            hi = min(end, line_start + len(line)) - line_start
+            hi = min(end, line_end) - line_start
             if lo >= hi:
                 lines.append(f"{c.dim}    {line}{c.reset}")
                 continue
-            lines.append(f"    {c.dim}{line[:lo]}{c.reset}{c.bold}{line[lo:hi]}{c.reset}"
-                         f"{c.dim}{line[hi:]}{c.reset}")
-    if f.get("comment") and (span is None or not c.bold):
+            # A sentence running over several lines opens on the line holding its
+            # start and closes on the line holding its end, so the pair reads as
+            # one span rather than one span per line.
+            opener = SPAN_OPEN if brackets and start >= line_start else ""
+            closer = SPAN_CLOSE if brackets and end <= line_end else ""
+            lines.append(f"    {c.dim}{line[:lo]}{c.reset}{opener}{c.bold}{line[lo:hi]}{c.reset}"
+                         f"{closer}{c.dim}{line[hi:]}{c.reset}")
+    if f.get("comment") and span is None:
         lines.append(f"{c.dim}    flagged sentence: {f['text']}{c.reset}")
     return lines
 

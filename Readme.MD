@@ -39,7 +39,8 @@ commentlint --init          write a default .commentlintrc.json, every option ex
 `--split-sentences` scores each sentence of a comment separately instead of scoring the
 comment as a whole, so a long comment with one bad sentence is flagged on that sentence.
 The report still prints the whole comment around it, with the flagged sentence bolded when
-color is on and repeated on a `flagged sentence:` line when it is off. Under `--json` the
+color is on and wrapped in `[>` and `<]` when it is off, as on a redirected or piped
+stdout. The brackets are explained on one line before the first finding. Under `--json` the
 sentence is the finding's `text` and the comment it came from is added as `comment`. The
 config key is `splitSentences`.
 
