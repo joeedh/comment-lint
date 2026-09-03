@@ -9,7 +9,8 @@ from commentlint import ENCODER_DIR, LINEAR_DIR
 from commentlint import config as config_mod
 from commentlint import rules as rules_mod
 from commentlint.cli import (
-    EXIT_CLEAN, EXIT_FINDINGS, EXIT_USAGE, Options, build_parser, looks_like_path, main,
+    EXIT_CLEAN, EXIT_FINDINGS, EXIT_USAGE, Options, _Colors, _comment_lines, _sentence_span,
+    build_parser, looks_like_path, main,
 )
 
 BAD = "// The leak scan is the refusal, and the refusal is what the caller reads back.\n"
@@ -588,6 +589,38 @@ class TestSplitSentences:
         _, out = run(["s.ts", "--split-sentences", "--json", "--threshold", "0.01"], capsys)
         findings = [f for fl in json.loads(out)["files"] for f in fl["findings"]]
         assert all(f["text"] != "No." for f in findings)
+
+    def test_a_finding_carries_the_comment_the_sentence_came_from(self, project, capsys):
+        (project / "s.ts").write_text(self.TWO_SENTENCES, encoding="utf-8")
+        _, out = run(["s.ts", "--split-sentences", "--json", "--threshold", "0.01"], capsys)
+        findings = [f for fl in json.loads(out)["files"] for f in fl["findings"]]
+        assert findings
+        assert all(f["comment"] == self.TWO_SENTENCES.strip("/ \n") for f in findings)
+
+    def test_text_output_prints_the_whole_comment_and_names_the_sentence(self, project, capsys):
+        (project / "s.ts").write_text(self.TWO_SENTENCES, encoding="utf-8")
+        _, out = run(["s.ts", "--split-sentences", "--threshold", "0.01", "--limit", "1"], capsys)
+        assert "The leak scan is the refusal" in out
+        assert "This second sentence is just plain filler" in out
+        assert re.search(r"flagged sentence: (The leak scan|This second sentence)", out)
+
+    def test_color_output_bolds_the_flagged_sentence(self, project, capsys):
+        (project / "s.ts").write_text(self.TWO_SENTENCES, encoding="utf-8")
+        _, out = run(["s.ts", "--split-sentences", "--threshold", "0.01", "--limit", "1",
+                      "--color"], capsys)
+        assert re.search(r"\x1b\[1m(The leak scan|This second sentence)", out)
+        assert "flagged sentence:" not in out
+
+    def test_a_sentence_split_over_two_lines_is_still_located(self):
+        comment = "The leak scan is the refusal, and the refusal\nis what the caller reads back."
+        sentence = " ".join(comment.split())
+        assert _sentence_span(comment, sentence) == (0, len(comment))
+
+    def test_an_unlocatable_sentence_leaves_the_comment_alone(self):
+        f = {"text": "Not in there at all.", "comment": "The gate ranks the heads."}
+        lines = _comment_lines(f, _Colors(False))
+        assert lines == ["    The gate ranks the heads.",
+                         "    flagged sentence: Not in there at all."]
 
 
 class TestLanguageExtensions:

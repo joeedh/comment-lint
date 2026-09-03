@@ -14,6 +14,7 @@ import argparse
 import dataclasses
 import json
 import os
+import re
 import sys
 import time
 from typing import Any
@@ -471,7 +472,10 @@ def run_scan(args: argparse.Namespace, opts: Options) -> int:
 
     per_file: dict[str, list[cache_mod.Finding]] = {}
     counts: dict[str, int] = {}
-    pending: list[tuple[str, Comment]] = []  # (path, Comment) awaiting a model score
+    # (path, Comment, whole comment text) awaiting a model score. In --split-sentences
+    # the Comment holds one sentence, so the third field keeps the surrounding comment
+    # the reporter prints it in.
+    pending: list[tuple[str, Comment, str]] = []
     fresh: list[str] = []  # files scanned this run, so worth writing back
 
     for path in files:
@@ -517,9 +521,9 @@ def run_scan(args: argparse.Namespace, opts: Options) -> int:
                 for sentence in sentences_mod.split(c.text):
                     if len(sentence) < opts.min_length:
                         continue
-                    pending.append((path, dataclasses.replace(c, text=sentence)))
+                    pending.append((path, dataclasses.replace(c, text=sentence), c.text))
             else:
-                pending.append((path, c))
+                pending.append((path, c, c.text))
 
     if pending:
         from .backends import load
@@ -531,8 +535,8 @@ def run_scan(args: argparse.Namespace, opts: Options) -> int:
             print(f"commentlint: the {backend.name} backend has no gate head and cannot "
                   f"scan; use --text to rank rules for one comment", file=sys.stderr)
             return EXIT_USAGE
-        scores = backend.score_batch([c.text for _, c in pending])
-        for (path, c), (gate, probs) in zip(pending, scores):
+        scores = backend.score_batch([c.text for _, c, _ in pending])
+        for (path, c, whole), (gate, probs) in zip(pending, scores):
             # Score.gate is `float | None` for a gateless backend; has_gate is
             # checked above, so it is never None on this path.
             if gate < cut:  # type: ignore[operator]
@@ -552,6 +556,7 @@ def run_scan(args: argparse.Namespace, opts: Options) -> int:
                 finding["experimental"] = True
             if opts.split_sentences:
                 finding["sentence"] = True
+                finding["comment"] = whole
             per_file[path].append(finding)
 
     for path in fresh:
@@ -735,6 +740,7 @@ class _Colors:
         self.bold_red = "\x1b[1;31m" if enabled else ""
         self.cyan = "\x1b[36m" if enabled else ""
         self.dim = "\x1b[2m" if enabled else ""
+        self.bold = "\x1b[1m" if enabled else ""
 
 
 def _concise_tag(f: cache_mod.Finding) -> str:
@@ -784,14 +790,60 @@ def _print_ts(by_file: dict[str, list[cache_mod.Finding]], use_color: bool) -> N
             desc = rule_desc.get(f["rule"], "")
             print(f"{c.bold_red}{rel}:{pos}{c.reset} - {c.bold_red}error{c.reset} "
                   f"{c.cyan}{_display_rule(f['rule'])}{c.reset}: {desc}")
-            for line in f["text"].split("\n"):
-                print(f"{c.dim}    {line}{c.reset}")
+            for line in _comment_lines(f, c):
+                print(line)
             if f.get("codepoints"):
                 chars = ", ".join(f"{cp} ({chr(int(cp[2:], 16))})" for cp in f["codepoints"])
                 print(f"{c.dim}    non-Latin-1: {chars}{c.reset}")
             for clause in f.get("clauses", []):
                 print(f"{c.dim}    {f.get('label') or SPAN_LABELS.get(f['rule'], 'flagged span')}: {clause}{c.reset}")
             print()
+
+def _sentence_span(text: str, sentence: str) -> tuple[int, int] | None:
+    """Offsets of `sentence` within `text`, or None when it cannot be located.
+
+    The splitter collapses a sentence to single-spaced prose, so a sentence that
+    ran over two lines of the comment no longer matches the comment literally.
+    Each run of whitespace is matched loosely to put it back.
+    """
+    words = sentence.split()
+    if not words:
+        return None
+    m = re.search(r"\s+".join(re.escape(w) for w in words), text)
+    return (m.start(), m.end()) if m else None
+
+
+def _comment_lines(f: cache_mod.Finding, c: _Colors) -> list[str]:
+    """The comment body, indented and dimmed, with the flagged sentence picked out.
+
+    A --split-sentences finding carries one sentence as its text and the comment
+    that sentence came from under "comment". The sentence on its own drops the
+    context a reader needs to judge it, so the whole comment is printed and the
+    sentence is bolded out of the dimmed rest. Where color is off the sentence
+    is named on a line of its own, since bolding is not available there.
+    """
+    text = f.get("comment") or f["text"]
+    span = _sentence_span(text, f["text"]) if f.get("comment") else None
+    lines: list[str] = []
+    if span is None:
+        lines = [f"{c.dim}    {line}{c.reset}" for line in text.split("\n")]
+    else:
+        start, end = span
+        pos = 0
+        for line in text.split("\n"):
+            line_start = pos
+            pos += len(line) + 1  # the newline the split consumed
+            lo = max(start, line_start) - line_start
+            hi = min(end, line_start + len(line)) - line_start
+            if lo >= hi:
+                lines.append(f"{c.dim}    {line}{c.reset}")
+                continue
+            lines.append(f"    {c.dim}{line[:lo]}{c.reset}{c.bold}{line[lo:hi]}{c.reset}"
+                         f"{c.dim}{line[hi:]}{c.reset}")
+    if f.get("comment") and (span is None or not c.bold):
+        lines.append(f"{c.dim}    flagged sentence: {f['text']}{c.reset}")
+    return lines
+
 
 def _display_rule(rule_id: str) -> str:
     """A rule id as shown to a person: 'rule' plus the id, e.g. 'ruleP1'.

@@ -81,6 +81,12 @@ to 0.70, which is the linear model's number and correct for nothing else.
 `--json` gives every finding with its position, ranked rules, text and `source`
 (`model` or `heuristic`). `--quiet` prints the summary alone.
 
+`--split-sentences` scores each sentence of a comment on its own, so a finding's text
+is one sentence rather than the whole comment. The default output still prints the
+comment around it, with the flagged sentence bolded where color is on and named on a
+`flagged sentence:` line where it is off. In `--json` the sentence stays under `text`
+and the comment it came from is added as `comment`.
+
 ## Config
 
 `.commentlintrc.json`, searched from the working directory upward, nearest wins. A directory
