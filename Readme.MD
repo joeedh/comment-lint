@@ -36,6 +36,13 @@ commentlint --coverage      which rules the model can name
 commentlint --init          write a default .commentlintrc.json, every option explained
 ```
 
+`--split-sentences` scores each sentence of a comment separately instead of scoring the
+comment as a whole, so a long comment with one bad sentence is flagged on that sentence.
+The report still prints the whole comment around it, with the flagged sentence bolded when
+color is on and repeated on a `flagged sentence:` line when it is off. Under `--json` the
+sentence is the finding's `text` and the comment it came from is added as `comment`. The
+config key is `splitSentences`.
+
 Report a comment the model should have flagged and did not, or one it flagged but
 shouldn't have. The text, and any note, revision or rule given with it, are appended to
 `.commentlint-feedback.json` in the working directory; `--ledger` writes somewhere else, and
@@ -73,6 +80,7 @@ comments are allowed outside string literals and are stripped before parsing:
   "withNodeModules": false,
   "cache": true,
   "cacheStrategy": "content",
+  "splitSentences": false,
   "backend": "linear",
   "model": "./model_linear",
   "markdown": false,
