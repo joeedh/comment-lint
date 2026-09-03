@@ -117,11 +117,12 @@ not affected, so a comment that would only have been named for a disabled rule i
 reported clean rather than under a different rule. `C2` (commented-out code) is a heuristic
 outside the model and can be disabled the same way.
 
-`C10`, `C11`, `C13`, `P4` and `P10` ship off by default: whether comments use `//` versus
-`/* */`, how many lines a non-doc comment may run, whether a comment may hold a Unicode
-character outside Latin-1, whether a sentence may open with a placeholder before a colon, and
-whether a sentence may use bold or italics for emphasis are per-project style calls, not
-something the taxonomy can settle for every codebase.
+`C10`, `C11`, `C13`, `P4`, `P10` and `P15` ship off by default: whether comments use `//`
+versus `/* */`, how many lines a non-doc comment may run, whether a comment may hold a Unicode
+character outside Latin-1, whether a sentence may open with a placeholder before a colon,
+whether a sentence may use bold or italics for emphasis, and whether a sentence may fence an
+interpolation with paired dashes are per-project style calls, not something the taxonomy can
+settle for every codebase.
 `enableRules` (or `--enable-rule RULE`, repeatable) turns one back on. A rule named in both
 `disableRules` and `enableRules` stays disabled -- disabling is treated as the more specific
 request. `--list-rules` marks each rule that is off in the resolved config with `(disabled)`.
@@ -141,16 +142,17 @@ reads identically to a correctly coordinated peer premise;
 docs/research/p14-bracket-supporting-premise.md has the measurements.
 
 `P13` (an alternative fenced with commas) and `P15` (an interpolation fenced with dashes)
-have deterministic checkers too, both on by default. `P13` fires when a plain noun phrase is
+have deterministic checkers too. `P13` is on by default and fires when a plain noun phrase is
 split from its verb by a comma-fenced phrase opening with a coordinator such as `or`, `and`
 or `rather than`: "A file that is not an image, or one carrying the mock marker, fails"
 wants parentheses around the alternative. An adverbial clause between commas ("The handler,
 if one is registered, runs first") is ordinary English and is not flagged. `P15` fires on
 two em dashes (spaced or not) or two spaced en dashes fencing text inside one sentence;
-` -- ` does not count. `P15` is a style call with a large footprint (about one comment in
-thirty in this project's own untouched prose) and is its own rule id so that
-`disableRules: ["P15"]` turns off exactly that; docs/research/p13-comma-and-dash-interpolation.md has the
-numbers. A comment one checker flags is reported once and not also scored by the model.
+` -- ` does not count. `P15` ships off, because the dash fence is a style call with a large
+footprint (about one comment in thirty in this project's own untouched prose) that plenty of
+prose uses deliberately; `enableRules: ["P15"]` or `--enable-rule P15` turns it on, and
+docs/research/p13-comma-and-dash-interpolation.md has the numbers. A comment one checker
+flags is reported once and not also scored by the model.
 
 ### Language families
 

@@ -46,7 +46,8 @@ Not scored:
   fenced with dashes), tried in that order. The first that fires names the finding and the
   comment is reported once, with the offending span under `clauses`; the model does not
   also score it, so a second fault in the same comment surfaces on the next scan after the
-  first is fixed. All three ship on by default and `disableRules` turns each off.
+  first is fixed. P13 and P14 ship on by default and `disableRules` turns each off. P15
+  ships off and `enableRules`/`--enable-rule` turns it on.
 
 ## Reading the output
 
@@ -123,7 +124,7 @@ that decides whether a comment is flagged still runs over every rule, so disabli
 changes which rule a finding is named after -- a comment that would only have been named for
 a disabled rule reports clean instead of shifting to a different rule.
 
-`C10`, `C11`, `C13`, `P4` and `P10` are in `rules.DEFAULT_DISABLED` and start off;
+`C10`, `C11`, `C13`, `P4`, `P10` and `P15` are in `rules.DEFAULT_DISABLED` and start off;
 `enableRules` names one to turn back on. The effective disabled set is `(DEFAULT_DISABLED - enableRules) |
 disableRules`, so a rule named in both stays disabled.
 

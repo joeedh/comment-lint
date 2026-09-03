@@ -319,8 +319,8 @@ DEFAULT_CONFIG = """{
   // "disableRules": [],
 
   // Rule ids to turn back on even though they ship off by default (C10,
-  // C11, C13, P4, P10 -- style calls the taxonomy can't settle for every
-  // codebase).
+  // C11, C13, P4, P10, P15 -- style calls the taxonomy can't settle for
+  // every codebase).
   // "enableRules": [],
 
   // Codepoints and ranges that rule C13 (no non-Latin-1 characters in a

@@ -964,7 +964,11 @@ class TestPremiseRule:
 
 
 class TestInterpolationRules:
-    """Checks that P13's and P15's deterministic checkers ship on by default as hard findings."""
+    """Checks P13's and P15's deterministic checkers, which report as hard findings.
+
+    P13 ships on by default; P15 ships off, so every test that needs it passes
+    --enable-rule P15.
+    """
 
     COMMA = ("// A file that is not an image, or one carrying the mock marker a real backend\n"
              "// refuses, fails at upload with a sentence naming the file.\n")
@@ -978,9 +982,15 @@ class TestInterpolationRules:
         assert "ruleP13" in out
         assert "interpolation fenced with commas: , or one carrying the mock marker" in out
 
-    def test_dash_fence_fires_by_default(self, project, capsys):
+    def test_dash_fence_is_off_until_enabled(self, project, capsys):
         (project / "p.ts").write_text(self.DASH, encoding="utf-8")
         code, out = run(["p.ts", "--json", "--threshold", "0.99"], capsys)
+        assert code == EXIT_CLEAN
+        assert [f for fl in json.loads(out)["files"] for f in fl["findings"]] == []
+
+    def test_dash_fence_fires_once_enabled(self, project, capsys):
+        (project / "p.ts").write_text(self.DASH, encoding="utf-8")
+        code, out = run(["p.ts", "--json", "--threshold", "0.99", "--enable-rule", "P15"], capsys)
         findings = [f for fl in json.loads(out)["files"] for f in fl["findings"]]
         assert code == EXIT_FINDINGS
         assert [f["rule"] for f in findings] == ["P15"]
@@ -989,7 +999,8 @@ class TestInterpolationRules:
 
     def test_disable_rule_suppresses_each(self, project, capsys):
         (project / "p.ts").write_text(self.COMMA + self.DASH, encoding="utf-8")
-        _, out = run(["p.ts", "--threshold", "0.99", "--disable-rule", "P13", "--disable-rule", "P15"], capsys)
+        _, out = run(["p.ts", "--threshold", "0.99", "--enable-rule", "P15",
+                      "--disable-rule", "P13", "--disable-rule", "P15"], capsys)
         assert "ruleP13" not in out and "ruleP15" not in out
 
     def test_dash_fenced_premise_is_p15_not_p14(self, project, capsys):
@@ -997,7 +1008,7 @@ class TestInterpolationRules:
         (project / "p.ts").write_text(
             "// The lock is a listening socket — the bind succeeds for exactly one process — so\n"
             "// there is no stale-pid bookkeeping.\n", encoding="utf-8")
-        _, out = run(["p.ts", "--json", "--threshold", "0.99"], capsys)
+        _, out = run(["p.ts", "--json", "--threshold", "0.99", "--enable-rule", "P15"], capsys)
         findings = [f for fl in json.loads(out)["files"] for f in fl["findings"]]
         assert [f["rule"] for f in findings] == ["P15"]
 
@@ -1005,24 +1016,26 @@ class TestInterpolationRules:
         (project / "p.ts").write_text(
             "// The prompt, and so the task hash, is unchanged — for now — until an author\n"
             "// describes the shot.\n", encoding="utf-8")
-        _, out = run(["p.ts", "--json", "--threshold", "0.99"], capsys)
+        _, out = run(["p.ts", "--json", "--threshold", "0.99", "--enable-rule", "P15"], capsys)
         findings = [f for fl in json.loads(out)["files"] for f in fl["findings"]]
         assert [f["rule"] for f in findings] == ["P13"]
 
     def test_text_mode_reports_the_same_rule_as_a_scan(self, capsys):
         # both shapes are present; the first checker in order names the finding, as in a scan
         text = "The prompt, and so the task hash, is unchanged — for now — until an author describes the shot."
-        code = main(["--text", text, "--json", "--threshold", "0.99"])
+        code = main(["--text", text, "--json", "--threshold", "0.99", "--enable-rule", "P15"])
         data = json.loads(capsys.readouterr().out)
         assert code == EXIT_FINDINGS
         assert [h["rule"] for h in data["heuristics"]] == ["P13"]
 
     def test_json_finding_carries_a_label(self, project, capsys):
         (project / "p.ts").write_text(self.DASH, encoding="utf-8")
-        _, out = run(["p.ts", "--json", "--threshold", "0.99"], capsys)
+        _, out = run(["p.ts", "--json", "--threshold", "0.99", "--enable-rule", "P15"], capsys)
         findings = [f for fl in json.loads(out)["files"] for f in fl["findings"]]
         assert findings[0]["label"] == "interpolation fenced with dashes"
 
-    def test_list_rules_includes_p15(self, capsys):
+    def test_list_rules_marks_p15_disabled(self, capsys):
         _, out = run(["--list-rules"], capsys)
-        assert "ruleP15  bracket-not-dash-interpolation" in out
+        assert "ruleP15  bracket-not-dash-interpolation (disabled)" in out
+        _, out = run(["--list-rules", "--enable-rule", "P15"], capsys)
+        assert "ruleP15  bracket-not-dash-interpolation (disabled)" not in out

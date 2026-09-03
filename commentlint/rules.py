@@ -44,8 +44,11 @@ def known_ids() -> set[str]:
 # Rules whose bar for what counts as a violation is a per-project call, not
 # something the taxonomy can settle -- they start off and a project opts back in
 # with enableRules / --enable-rule. C10/C11 are comment style, C13 allows
-# non-Latin-1 text, and P4/P10 are prose conventions many projects do not share.
-DEFAULT_DISABLED: set[str] = {"C10", "C11", "C13", "P4", "P10"}
+# non-Latin-1 text, and P4/P10/P15 are prose conventions many projects do not
+# share. P15 fires on a shape plenty of prose uses deliberately -- about one
+# comment in thirty of this project's own untouched text -- so a project asks
+# for it rather than inheriting it.
+DEFAULT_DISABLED: set[str] = {"C10", "C11", "C13", "P4", "P10", "P15"}
 
 
 def sorted_ids(ids: Iterable[str]) -> list[str]:

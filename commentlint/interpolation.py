@@ -14,8 +14,10 @@ dashes are the most recognisable tic of LLM-written prose:
     `Cycles are legal in a VN — looping to a hub scene is normal structure — so
     they are broken for ranking purposes only.`
 
-Both shapes are decidable by structure, unlike P14's, and both ship on by default as
-hard findings. The measurements are in
+Both shapes are decidable by structure, unlike P14's, and both report as hard findings.
+P13 ships on by default. P15 ships off, because the dash fence is a style call with a
+large footprint -- about one comment in thirty of this project's own untouched prose --
+so `enableRules: ["P15"]` turns it on. The measurements are in
 docs/research/p13-comma-and-dash-interpolation.md and the plan in
 docs/plans/p13-p15-interpolation-checkers.md. The examples above sit in backticks so
 that this docstring does not flag itself.

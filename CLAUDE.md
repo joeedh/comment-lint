@@ -17,7 +17,9 @@
   moving anything across a module boundary.
 * The taxonomy is data/rules.json: 27 rules, of which 16 have enough examples to train.
   P13, P14 and P15 also have deterministic checkers (`premise.py`, `interpolation.py`)
-  that run before the model and report as `heuristic` findings.
+  that run before the model and report as `heuristic` findings. P15 is in
+  `rules.DEFAULT_DISABLED` with C10, C11, C13, P4 and P10, so a project turns it on with
+  `enableRules`.
 * Scoring has two stages. A gate decides whether a comment breaks some rule, then the
   per-rule heads are ranked against each other. A ranked rule is a suspicion, not a
   detection, and anything that presents it as a detection overstates what the model knows.
