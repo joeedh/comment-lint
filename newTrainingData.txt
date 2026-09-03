@@ -1,0 +1,3 @@
+==== old ====
+Everything else here is about arranging the mesh (which the popup is not part of), so splitting one, collapsing one, or covering one with a different editor are all things the author never asked for.
+=== new ===

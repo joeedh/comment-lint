@@ -11,10 +11,11 @@ subject and the coordinated clause's subject is a bare pronoun, the pronoun cont
 that subject whichever side of the copula it points at, and the second clause is a
 rider that belongs inside the first:
 
-    Building the playable is the question, and it is pure and writes nothing, so ...
-    Art notes are the only thing an author says, and they are authored input, so ...
+    `Building the playable is the question, and it is pure and writes nothing, so ...`
+    `Art notes are the only thing an author says, and they are authored input, so ...`
 
-Against 92 hand-labelled chains this predicate fires 3 times, all defects. Every filter
+The examples sit in backticks so that this docstring does not flag itself. Against 92
+hand-labelled chains this predicate fires 3 times, all defects. Every filter
 below exists to keep a specific false positive silent, and where the text is ambiguous
 the checker does not fire, because the finding is a hard failure rather than advice.
 The plan is docs/plans/p14-deterministic-checker.md.
@@ -32,7 +33,7 @@ RULE = "P14"
 
 # Hashed into the cache run key, so a change to the predicate invalidates stored
 # findings without waiting for a release.
-CHECK_VERSION = 3
+CHECK_VERSION = 4
 
 SENTENCE = re.compile(r"(?<=[.!?])\s+|\n\s*\n")
 # The span admits no comma, colon, semicolon or period, and no protected period
@@ -40,7 +41,11 @@ SENTENCE = re.compile(r"(?<=[.!?])\s+|\n\s*\n")
 CHAIN = re.compile(r",\s+and\s+(?P<mid>[^,:;.\0]{8,120}),\s+so\b")
 WORD = re.compile(r"[A-Za-z][A-Za-z'_.-]*")
 DASH = re.compile(r"—|–|\s--\s")
-CODE_SPAN = re.compile(r"`[^`\n]*`")
+# A code span may wrap across lines inside a comment; the cap keeps a stray
+# backtick from blanking the rest of the text.
+CODE_SPAN = re.compile(r"`[^`]{0,200}`")
+QUOTED = re.compile(r'"[^"\n]{1,120}"')
+SENTENCE_END = re.compile(r"[.!?]\s")
 
 # Matches a clause boundary inside a sentence; the first clause is what follows the
 # last one. A subordinate clause that opens the sentence is cut off separately.
@@ -212,19 +217,28 @@ def _fires(first: str, middle: str) -> str | None:
     return pronoun
 
 
-def _masked(text: str) -> str:
-    """Returns `text` with code spans blanked and abbreviation periods protected, same length."""
-    blanked = CODE_SPAN.sub(lambda m: "`" + "x" * (len(m.group(0)) - 2) + "`", text)
-    return sentences_mod.protect(blanked)
+def masked(text: str) -> str:
+    """Returns `text` with code spans and quoted strings blanked and abbreviation periods protected.
+
+    The result has the same length as `text`, so offsets found in it index `text`.
+    """
+    def blank(m: re.Match[str]) -> str:
+        # A span that runs past a sentence end is a stray backtick, not code, and
+        # blanking it would silence every checker on the sentences it covers.
+        if "\n" in m.group(0) and SENTENCE_END.search(m.group(0)):
+            return m.group(0)
+        return m.group(0)[0] + "x" * (len(m.group(0)) - 2) + m.group(0)[-1]
+
+    return sentences_mod.protect(QUOTED.sub(blank, CODE_SPAN.sub(blank, text)))
 
 
 def supporting_premise(text: str) -> list[Span]:
     """Returns every `, and <pronoun> ..., so` chain in `text` whose pronoun continues the subject."""
     out: list[Span] = []
-    masked = _masked(text)
+    view = masked(text)
     offset = 0
-    for sentence in SENTENCE.split(masked):
-        base = masked.find(sentence, offset)
+    for sentence in SENTENCE.split(view):
+        base = view.find(sentence, offset)
         if base < 0:
             base = offset
         offset = base + len(sentence)

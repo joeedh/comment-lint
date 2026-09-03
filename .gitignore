@@ -14,3 +14,6 @@ dist/
 node_modules/
 .commentlintrc.local.json
 .npm-test-scratch/
+
+# the npm wrapper caches wheels here when building its venv
+npm/pip/

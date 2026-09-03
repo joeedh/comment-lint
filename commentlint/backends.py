@@ -1,6 +1,6 @@
 """Model loading and scoring. The only module that imports sklearn or torch.
 
-Keeping that import here, and importing this module lazily, is what makes a
+Keeping that import here and importing this module lazily is what makes a
 fully cached run fast: `import sklearn` costs 2.41s of the 2.81s it takes to
 load the model at all. A cached run that never scores anything must never
 reach this file.

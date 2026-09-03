@@ -25,6 +25,8 @@ export PATH="$PATH:/path/to/commentlint/bin"        # bash
 $env:PATH += ';C:\path\to\commentlint\bin'          # PowerShell, this session only
 ```
 
+Create a default configuration file with commentlint --init
+
 ## The commentlint command
 
 ```
@@ -129,6 +131,18 @@ other verb it may point at the object, so the checker stays silent. The finding 
 clause. The rest of P14 has no checker, because a gloss about the first clause's object
 reads identically to a correctly coordinated peer premise;
 docs/research/p14-bracket-supporting-premise.md has the measurements.
+
+`P13` (an alternative fenced with commas) and `P15` (an interpolation fenced with dashes)
+have deterministic checkers too, both on by default. `P13` fires when a plain noun phrase is
+split from its verb by a comma-fenced phrase opening with a coordinator such as `or`, `and`
+or `rather than`: "A file that is not an image, or one carrying the mock marker, fails"
+wants parentheses around the alternative. An adverbial clause between commas ("The handler,
+if one is registered, runs first") is ordinary English and is not flagged. `P15` fires on
+two em dashes (spaced or not) or two spaced en dashes fencing text inside one sentence;
+` -- ` does not count. `P15` is a style call with a large footprint (about one comment in
+thirty in this project's own untouched prose) and is its own rule id so that
+`disableRules: ["P15"]` turns off exactly that; docs/research/p13-comma-and-dash-interpolation.md has the
+numbers. A comment one checker flags is reported once and not also scored by the model.
 
 ### Language families
 

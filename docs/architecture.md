@@ -1,7 +1,7 @@
 # Architecture
 
 commentlint reads source files, pulls the prose comments out of them, and scores each one
-against a taxonomy of 26 comment rules held in data/rules.json. It runs locally and makes no
+against a taxonomy of 27 comment rules held in data/rules.json. It runs locally and makes no
 network calls. The output is a ranked list of suspect comments with an exit code, in the shape
 a linter produces.
 
@@ -65,6 +65,7 @@ the cache sits where it does and why the module boundaries fall where they do.
 | `commentlint/rules.py` | Rule descriptions and calibrated cuts, readable without loading a model |
 | `commentlint/unicode_whitelist.py` | Parses rule C13's `unicodeWhitelist` config entries and tests codepoint membership |
 | `commentlint/premise.py` | Rule P14's deterministic checker for the one sub-case a regex can decide; runs on prose before the model, like C13, and is a hard finding |
+| `commentlint/interpolation.py` | Rules P13 and P15, the comma-fenced and dash-fenced interpolation checkers; `cli.py` tries the three checkers in order and reports the first that fires |
 | `commentlint/feedback.py` | The false-negative ledger a user appends missed comments to |
 | `commentlint/comments/tsjs.py` | Character state machine over TS/JS source |
 | `commentlint/comments/pysrc.py` | `tokenize` for comments and `ast` for docstrings |
@@ -195,9 +196,10 @@ Gate evaluation drops the corrected-version rows through `realistic_mask`. Those
 contrastive negatives during training and adversarial near-duplicates during evaluation, since a
 comment someone already fixed is not a thing the tool meets in the wild.
 
-Of the 26 rules in the taxonomy, 16 have enough positives to train. Seven have none at all: C1,
-C2, C3, C5, C6, C10 and C13 -- the last two are non-model rules by design, not just short on
-examples.
+Of the 27 rules in the taxonomy, 16 have enough positives to train (P13, P14 and P15 also have
+deterministic checkers that need no training). Nine have none at all: C1,
+C2, C3, C5, C6, C10, C13, P14 and P15. C10 and C13 are non-model rules by design, not just
+short on examples, and P14 and P15 are covered by their checkers.
 
 ## Tests
 

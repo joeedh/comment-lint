@@ -41,6 +41,12 @@ Not scored:
   code and holds a disallowed codepoint is reported once, as C2. C13 ships off by default
   (`enableRules`/`--enable-rule` turns it on) and `unicodeWhitelist` in config names codepoints
   or ranges to let through.
+- a prose comment one of the deterministic checkers flags: P14 (a supporting premise
+  coordinated as a peer), P13 (an alternative fenced with commas) or P15 (an interpolation
+  fenced with dashes), tried in that order. The first that fires names the finding and the
+  comment is reported once, with the offending span under `clauses`; the model does not
+  also score it, so a second fault in the same comment surfaces on the next scan after the
+  first is fixed. All three ship on by default and `disableRules` turns each off.
 
 ## Reading the output
 
