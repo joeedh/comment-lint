@@ -107,9 +107,11 @@ not affected, so a comment that would only have been named for a disabled rule i
 reported clean rather than under a different rule. `C2` (commented-out code) is a heuristic
 outside the model and can be disabled the same way.
 
-`C10`, `C11` and `C13` ship off by default: whether comments use `//` versus `/* */`, how many
-lines a non-doc comment may run, and whether a comment may hold a Unicode character outside
-Latin-1 are per-project style calls, not something the taxonomy can settle for every codebase.
+`C10`, `C11`, `C13`, `P4` and `P10` ship off by default: whether comments use `//` versus
+`/* */`, how many lines a non-doc comment may run, whether a comment may hold a Unicode
+character outside Latin-1, whether a sentence may open with a placeholder before a colon, and
+whether a sentence may use bold or italics for emphasis are per-project style calls, not
+something the taxonomy can settle for every codebase.
 `enableRules` (or `--enable-rule RULE`, repeatable) turns one back on. A rule named in both
 `disableRules` and `enableRules` stays disabled -- disabling is treated as the more specific
 request. `--list-rules` marks each rule that is off in the resolved config with `(disabled)`.

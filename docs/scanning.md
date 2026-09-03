@@ -111,8 +111,8 @@ that decides whether a comment is flagged still runs over every rule, so disabli
 changes which rule a finding is named after -- a comment that would only have been named for
 a disabled rule reports clean instead of shifting to a different rule.
 
-`C10`, `C11` and `C13` are in `rules.DEFAULT_DISABLED` and start off; `enableRules` names one
-to turn back on. The effective disabled set is `(DEFAULT_DISABLED - enableRules) |
+`C10`, `C11`, `C13`, `P4` and `P10` are in `rules.DEFAULT_DISABLED` and start off;
+`enableRules` names one to turn back on. The effective disabled set is `(DEFAULT_DISABLED - enableRules) |
 disableRules`, so a rule named in both stays disabled.
 
 `unicodeWhitelist` is a list of codepoints and ranges that C13 lets through: `"U+2014"` for one

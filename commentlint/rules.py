@@ -5,6 +5,7 @@ pulling sklearn into the import graph.
 """
 import json
 import os
+from collections.abc import Iterable
 
 from . import LINEAR_DIR, RULES_PATH
 
@@ -40,11 +41,16 @@ def known_ids() -> set[str]:
     return {r["id"] for r in all_rules()}
 
 
-# Style rules whose bar for what counts as a violation is a per-project call,
-# not something the taxonomy can settle -- so they start off and a project
-# opts back in with enableRules / --enable-rule. C13 (non-Latin-1 unicode) joins
-# them for the same reason: plenty of legitimate comments use it.
-DEFAULT_DISABLED: set[str] = {"C10", "C11", "C13"}
+# Rules whose bar for what counts as a violation is a per-project call, not
+# something the taxonomy can settle -- they start off and a project opts back in
+# with enableRules / --enable-rule. C10/C11 are comment style, C13 allows
+# non-Latin-1 text, and P4/P10 are prose conventions many projects do not share.
+DEFAULT_DISABLED: set[str] = {"C10", "C11", "C13", "P4", "P10"}
+
+
+def sorted_ids(ids: Iterable[str]) -> list[str]:
+    """Rule ids in taxonomy order: by letter, then by number, so P4 precedes P10."""
+    return sorted(ids, key=lambda r: (r[0], int(r[1:])))
 
 
 def thresholds(model_dir: str | None = None) -> dict[str, float]:

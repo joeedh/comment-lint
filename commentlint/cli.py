@@ -62,7 +62,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="never report this rule id (e.g. C10); repeatable")
     p.add_argument("--enable-rule", action="append", default=[], dest="enable_rules", metavar="RULE",
                    help=f"report this rule id even though it is off by default "
-                        f"({', '.join(sorted(rules_mod.DEFAULT_DISABLED))}); repeatable")
+                        f"({', '.join(rules_mod.sorted_ids(rules_mod.DEFAULT_DISABLED))}); repeatable")
     p.add_argument("--markdown", action="store_true",
                    help="pick up .md/.markdown files during directory walks (combined with "
                         "--with-node-modules, this also scans vendored markdown)")
