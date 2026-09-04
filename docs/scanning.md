@@ -43,11 +43,12 @@ Not scored:
   or ranges to let through.
 - a prose comment one of the deterministic checkers flags: P14 (a supporting premise
   coordinated as a peer), P13 (an alternative fenced with commas) or P15 (an interpolation
-  fenced with dashes), tried in that order. The first that fires names the finding and the
-  comment is reported once, with the offending span under `clauses`; the model does not
-  also score it, so a second fault in the same comment surfaces on the next scan after the
-  first is fixed. P13 and P14 ship on by default and `disableRules` turns each off. P15
-  ships off and `enableRules`/`--enable-rule` turns it on.
+  fenced with dashes), tried in that order. Without `--split-sentences` the first that
+  fires names the finding and the comment is reported once, with the offending span under
+  `clauses`; the model does not also score it, so a second fault in the same comment
+  surfaces on the next scan after the first is fixed. Under the flag the same choice is
+  made per sentence, described below. P13 and P14 ship on by default and `disableRules`
+  turns each off. P15 ships off and `enableRules`/`--enable-rule` turns it on.
 
 ## Reading the output
 
@@ -90,6 +91,15 @@ brackets anything explains the brackets on one line before the first finding. A 
 the splitter reshaped past recognition cannot be marked in place, and is named on a
 `flagged sentence:` line under the comment instead. In `--json` the sentence stays under
 `text` and the comment it came from is added as `comment`.
+
+The deterministic checkers report per sentence as well. They still read the whole
+comment, because `interpolation.py` decides two of its cases from where the line breaks
+fall, but each span they return is reported against the sentence it landed in, and the
+sentences no checker flagged are still scored by the model. A comment with two dash-fenced
+sentences therefore yields two P15 findings, and a comment breaking two shapes reports
+under both ids where a run without the flag reports only the first. Where one span crosses
+what the sentence splitter calls a boundary, the finding covers both sentences. Such a
+finding adds `sentence_start` and `sentence_end`, the sentence's offsets into `comment`.
 
 ## Config
 

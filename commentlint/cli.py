@@ -39,9 +39,9 @@ CODE_RULE = "C2"  # commented-out code: high-volume, hidden unless --show-code
 UNICODE_RULE = "C13"  # non-Latin-1 characters in a comment
 
 # Lists the deterministic prose checkers in the order they are tried. The first
-# that fires names the finding and the comment is not scored. The order only
-# decides which id a comment matching two shapes is reported under; the most
-# specific shape goes first.
+# that fires names the finding and the flagged text is not scored. The order only
+# decides which id is used where one span matches two shapes; the most specific
+# shape goes first.
 CHECKERS: list[tuple[str, Any]] = [
     (premise.RULE, premise.supporting_premise),
     (interpolation.COMMA_RULE, interpolation.comma_fenced),
@@ -522,17 +522,15 @@ def run_scan(args: argparse.Namespace, opts: Options) -> int:
                 if bad:
                     per_file[path].append(_finding_unicode(c, bad))
                     continue
-            # The deterministic checkers run on prose of either kind. A comment one
-            # of them flags is not also scored, like C2 and C13: one hard finding
-            # per comment, and the model's suspicion would only be printed beside it.
-            if _check(c, opts, per_file[path]):
-                continue
+            # The deterministic checkers run on prose of either kind. Flagged text is
+            # not also scored, like C2 and C13, because the model's suspicion would
+            # only be printed beside a finding that is already certain.
             if opts.split_sentences:
-                for sentence in sentences_mod.split(c.text):
+                for sentence in _check_sentences(c, opts, per_file[path]):
                     if len(sentence) < opts.min_length:
                         continue
                     pending.append((path, dataclasses.replace(c, text=sentence), c.text))
-            else:
+            elif not _check(c, opts, per_file[path]):
                 pending.append((path, c, c.text))
 
     if pending:
@@ -620,6 +618,90 @@ def _finding_spans(c: Comment, rule: str, spans: list[premise.Span]) -> cache_mo
     finding["clauses"] = [" ".join(s.clause.split()) for s in spans]
     finding["label"] = SPAN_LABELS[rule]
     return finding
+
+
+def _locate_sentences(text: str) -> list[tuple[str, int, int]]:
+    """Returns each sentence of `text` with its offsets, or (-1, -1) where it is not found.
+
+    The splitter collapses a sentence to single-spaced prose, so the search runs
+    forward from the previous sentence's end. A comment that says the same thing
+    twice then binds each sentence to its own occurrence rather than binding both
+    to the first.
+    """
+    out: list[tuple[str, int, int]] = []
+    pos = 0
+    for sentence in sentences_mod.split(text):
+        span = _sentence_span(text, sentence, pos)
+        if span is None:
+            out.append((sentence, -1, -1))
+            continue
+        out.append((sentence, span[0], span[1]))
+        pos = span[1]
+    return out
+
+
+def _check_sentences(c: Comment, opts: Options, findings: list[cache_mod.Finding]) -> list[str]:
+    """Reports each flagged sentence of `c` and returns the sentences left to score.
+
+    The checkers run on the whole comment with its newlines intact, because
+    interpolation.py's gloss-line and list-item guards read newlines that
+    sentences.split() has already collapsed away. Their spans are mapped back onto
+    sentences afterwards. No span appears or disappears, because the checkers see
+    the same text either way; which rule id claims a span is decided per sentence,
+    so a comment breaking two shapes reports under both ids where a run without the
+    flag reports only the first.
+
+    A finding covers every sentence its span overlaps, not just the first one it
+    touches. masked() blanks quoted and backticked text before splitting and the
+    sentence splitter does not, so a period inside quotes ends a sentence for one
+    and not for the other, and a span can straddle a boundary. Reporting only the
+    first half would print a fragment and hand the second half to the model.
+    """
+    fired = [(rule, check(c.text)) for rule, check in CHECKERS if rule not in opts.disable_rules]
+    fired = [(rule, spans) for rule, spans in fired if spans]
+    if not fired:
+        return sentences_mod.split(c.text)
+
+    located = _locate_sentences(c.text)
+    placed: list[tuple[str, premise.Span, tuple[int, int] | None]] = []
+    for rule, spans in fired:
+        for span in spans:
+            covered = [i for i, (_, s, e) in enumerate(located)
+                       if s >= 0 and s < span.end and span.start < e]
+            placed.append((rule, span, (covered[0], covered[-1]) if covered else None))
+
+    units: list[tuple[int, int]] = []
+    for lo, hi in sorted(r for _, _, r in placed if r is not None):
+        if units and lo <= units[-1][1]:
+            units[-1] = (units[-1][0], max(units[-1][1], hi))
+        else:
+            units.append((lo, hi))
+
+    order = [rule for rule, _ in CHECKERS]
+    claimed: set[int] = set()
+    for lo, hi in units:
+        inside = [(rule, span) for rule, span, r in placed if r is not None and lo <= r[0] and r[1] <= hi]
+        rule = next(r for r in order if any(other == r for other, _ in inside))
+        text = " ".join(sentence for sentence, _, _ in located[lo:hi + 1])
+        finding = _finding_spans(dataclasses.replace(c, text=text), rule,
+                                 [span for other, span in inside if other == rule])
+        finding["sentence"] = True
+        finding["comment"] = c.text
+        finding["sentence_start"] = located[lo][1]
+        finding["sentence_end"] = located[hi][2]
+        findings.append(finding)
+        claimed.update(range(lo, hi + 1))
+
+    # A span the sentence walk could not place would otherwise be a detection the
+    # non-split run reports and this one drops, so it falls back to a whole-comment
+    # finding. Only a disagreement between the two splitters reaches this branch,
+    # and none is known, so `orphans` is expected to stay empty.
+    orphans = [(rule, span) for rule, span, r in placed if r is None]
+    if orphans:
+        rule = next(r for r in order if any(other == r for other, _ in orphans))
+        findings.append(_finding_spans(c, rule, [span for other, span in orphans if other == rule]))
+
+    return [sentence for i, (sentence, _, _) in enumerate(located) if i not in claimed]
 
 
 def report(
@@ -818,8 +900,8 @@ def _print_ts(by_file: dict[str, list[cache_mod.Finding]], use_color: bool) -> N
         print(line)
 
 
-def _sentence_span(text: str, sentence: str) -> tuple[int, int] | None:
-    """Offsets of `sentence` within `text`, or None when it cannot be located.
+def _sentence_span(text: str, sentence: str, pos: int = 0) -> tuple[int, int] | None:
+    """Offsets of `sentence` within `text` at or after `pos`, or None when not found.
 
     The splitter collapses a sentence to single-spaced prose, so a sentence that
     ran over two lines of the comment no longer matches the comment literally.
@@ -828,7 +910,7 @@ def _sentence_span(text: str, sentence: str) -> tuple[int, int] | None:
     words = sentence.split()
     if not words:
         return None
-    m = re.search(r"\s+".join(re.escape(w) for w in words), text)
+    m = re.compile(r"\s+".join(re.escape(w) for w in words)).search(text, pos)
     return (m.start(), m.end()) if m else None
 
 
@@ -836,16 +918,23 @@ def _comment_lines(f: cache_mod.Finding, c: _Colors) -> list[str]:
     """The comment body, indented and dimmed, with the flagged sentence picked out.
 
     A --split-sentences finding carries one sentence as its text and the comment
-    that sentence came from under "comment". The sentence on its own drops the
-    context a reader needs to judge it, so the whole comment is printed and the
-    sentence is bolded out of the dimmed rest. Where color is off the sentence is
+    that sentence came from under "comment". A heuristic finding also stores the
+    offsets its span fell in, so a sentence appearing twice in the comment is
+    marked at the occurrence that fired. The sentence on its own drops the context
+    a reader needs to judge it, so the whole comment is printed and the sentence is
+    bolded out of the dimmed rest. Where color is off the sentence is
     wrapped in SPAN_OPEN and SPAN_CLOSE instead, which marks it in place rather
     than repeating it under the comment. A sentence the splitter reshaped past
     recognition cannot be marked either way, so it falls back to a line of its
     own naming the sentence.
     """
     text = f.get("comment") or f["text"]
-    span = _sentence_span(text, f["text"]) if f.get("comment") else None
+    span = None
+    if f.get("comment"):
+        if f.get("sentence_start", -1) >= 0:
+            span = (f["sentence_start"], f["sentence_end"])
+        else:
+            span = _sentence_span(text, f["text"])
     lines: list[str] = []
     if span is None:
         lines = [f"{c.dim}    {line}{c.reset}" for line in text.split("\n")]

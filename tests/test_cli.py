@@ -9,8 +9,8 @@ from commentlint import ENCODER_DIR, LINEAR_DIR
 from commentlint import config as config_mod
 from commentlint import rules as rules_mod
 from commentlint.cli import (
-    EXIT_CLEAN, EXIT_FINDINGS, EXIT_USAGE, SPAN_LEGEND, Options, _Colors, _comment_lines,
-    _sentence_span, build_parser, looks_like_path, main,
+    EXIT_CLEAN, EXIT_FINDINGS, EXIT_USAGE, SPAN_CLOSE, SPAN_LEGEND, SPAN_OPEN, Options,
+    _Colors, _comment_lines, _sentence_span, build_parser, looks_like_path, main,
 )
 
 BAD = "// The leak scan is the refusal, and the refusal is what the caller reads back.\n"
@@ -955,7 +955,7 @@ class TestPremiseRule:
 
     def test_flagged_comment_is_not_also_scored_by_the_model(self, project, capsys):
         (project / "p.ts").write_text(self.TEXT, encoding="utf-8")
-        _, out = run(["p.ts", "--json", "--threshold", "0.0"], capsys)
+        _, out = run(["p.ts", "--json", "--threshold", "0.01"], capsys)
         findings = [f for fl in json.loads(out)["files"] for f in fl["findings"]]
         assert [f["rule"] for f in findings] == ["P14"]
 
@@ -975,14 +975,18 @@ class TestPremiseRule:
         bumped = {"cut": 0.5, "checks": premise.CHECK_VERSION + 1}
         assert cache_mod.run_key(LINEAR_DIR, base) != cache_mod.run_key(LINEAR_DIR, bumped)
 
-    def test_split_sentences_still_reports_the_comment_once(self, project, capsys):
-        # the chain is sentence-local, so the checker runs on the whole comment; the
-        # flagged comment is then not scored sentence by sentence either
+    def test_split_sentences_reports_the_chain_sentence_alone(self, project, capsys):
+        # the checker still sees the whole comment, but under --split-sentences it
+        # claims only the sentence its span landed in, so the plain one is still scored
         text = ("// The first sentence here is a plain one about the cache.\n" + self.TEXT)
         (project / "p.ts").write_text(text, encoding="utf-8")
-        _, out = run(["p.ts", "--json", "--split-sentences", "--threshold", "0.0"], capsys)
+        _, out = run(["p.ts", "--json", "--split-sentences", "--threshold", "0.01"], capsys)
         findings = [f for fl in json.loads(out)["files"] for f in fl["findings"]]
-        assert [f["rule"] for f in findings] == ["P14"]
+        chain = next(f for f in findings if f["rule"] == "P14")
+        assert chain["comment"] == text.replace("// ", "").strip()
+        assert chain["text"].startswith("Building the playable is the question")
+        assert "The first sentence here" not in chain["text"]
+        assert [f["rule"] for f in findings if f["source"] in ("model", "model-markdown")]
 
 
 class TestInterpolationRules:
@@ -1055,6 +1059,115 @@ class TestInterpolationRules:
         _, out = run(["p.ts", "--json", "--threshold", "0.99", "--enable-rule", "P15"], capsys)
         findings = [f for fl in json.loads(out)["files"] for f in fl["findings"]]
         assert findings[0]["label"] == "interpolation fenced with dashes"
+
+    TWO_FENCES = (
+        "// The parser walks each file once before it looks at anything else at all.\n"
+        "// Cycles are legal in a VN — looping to a hub scene is normal structure — so they\n"
+        "// are broken for ranking purposes only, never rejected.\n"
+        "// A second offender lives here — a dash-fenced aside of its own making — and it\n"
+        "// should be flagged too, twice over.\n"
+    )
+
+    def test_split_sentences_reports_each_fenced_sentence(self, project, capsys):
+        (project / "p.ts").write_text(self.TWO_FENCES, encoding="utf-8")
+        code, out = run(["p.ts", "--json", "--threshold", "0.99", "--enable-rule", "P15",
+                         "--split-sentences"], capsys)
+        findings = [f for fl in json.loads(out)["files"] for f in fl["findings"]]
+        assert code == EXIT_FINDINGS
+        assert [f["rule"] for f in findings] == ["P15", "P15"]
+        assert findings[0]["text"].startswith("Cycles are legal")
+        assert findings[1]["text"].startswith("A second offender")
+        assert findings[0]["clauses"] == ["— looping to a hub scene is normal structure —"]
+        assert findings[1]["clauses"] == ["— a dash-fenced aside of its own making —"]
+        assert all(f["sentence"] and f["comment"] == self.TWO_FENCES.replace("// ", "").strip()
+                   for f in findings)
+
+    def test_without_the_flag_the_same_comment_reports_once(self, project, capsys):
+        (project / "p.ts").write_text(self.TWO_FENCES, encoding="utf-8")
+        _, out = run(["p.ts", "--json", "--threshold", "0.99", "--enable-rule", "P15"], capsys)
+        findings = [f for fl in json.loads(out)["files"] for f in fl["findings"]]
+        assert [f["rule"] for f in findings] == ["P15"]
+        assert len(findings[0]["clauses"]) == 2
+        assert "sentence" not in findings[0]
+
+    def test_split_sentences_leaves_the_clean_sentence_to_the_model(self, project, capsys):
+        (project / "p.ts").write_text(self.TWO_FENCES, encoding="utf-8")
+        _, out = run(["p.ts", "--json", "--threshold", "0.01", "--enable-rule", "P15",
+                      "--split-sentences"], capsys)
+        findings = [f for fl in json.loads(out)["files"] for f in fl["findings"]]
+        scored = [f for f in findings if f["source"] == "model"]
+        assert [f["text"] for f in scored] == [
+            "The parser walks each file once before it looks at anything else at all."]
+
+    def test_split_sentences_brackets_the_flagged_sentence(self, project, capsys):
+        (project / "p.ts").write_text(self.DASH, encoding="utf-8")
+        _, out = run(["p.ts", "--threshold", "0.99", "--enable-rule", "P15",
+                      "--split-sentences"], capsys)
+        assert SPAN_LEGEND in out
+        assert f"    {SPAN_OPEN}Cycles are legal in a VN" in out
+        assert f"never rejected.{SPAN_CLOSE}" in out
+
+    def test_split_sentences_reports_two_shapes_under_their_own_ids(self, project, capsys):
+        (project / "p.ts").write_text(
+            "// The prompt, and so the task hash, is unchanged until an author acts here.\n"
+            "// The shot list is rebuilt — for now — whenever the author describes a shot.\n",
+            encoding="utf-8")
+        _, out = run(["p.ts", "--json", "--threshold", "0.99", "--enable-rule", "P15",
+                      "--split-sentences"], capsys)
+        findings = [f for fl in json.loads(out)["files"] for f in fl["findings"]]
+        assert [f["rule"] for f in findings] == ["P13", "P15"]
+
+    def test_a_span_straddling_a_sentence_boundary_reports_once(self, project, capsys):
+        # masked() blanks the quoted period so the checker sees one sentence where the
+        # splitter sees two; the finding covers both, so neither half reaches the model
+        (project / "p.ts").write_text(
+            "// The parser walks each file once before it looks at anything else at all.\n"
+            "// Cycles are legal in a VN — \"one. Two\" is the hub scene — so they are broken.\n",
+            encoding="utf-8")
+        _, out = run(["p.ts", "--json", "--threshold", "0.01", "--enable-rule", "P15",
+                      "--split-sentences"], capsys)
+        findings = [f for fl in json.loads(out)["files"] for f in fl["findings"]]
+        flagged = [f for f in findings if f["rule"] == "P15"]
+        assert len(flagged) == 1
+        assert flagged[0]["text"].startswith("Cycles are legal")
+        assert flagged[0]["text"].endswith("so they are broken.")
+        scored = [f["text"] for f in findings if f["source"] == "model"]
+        assert scored == ["The parser walks each file once before it looks at anything else at all."]
+
+    def test_split_sentences_reports_a_sentence_under_min_length(self, project, capsys):
+        # the floor filters what the model scores, not what a checker found
+        (project / "p.ts").write_text(
+            "// The parser walks each file once before it looks at anything else at all.\n"
+            "// It — mostly — waits.\n", encoding="utf-8")
+        _, out = run(["p.ts", "--json", "--threshold", "0.99", "--enable-rule", "P15",
+                      "--split-sentences"], capsys)
+        findings = [f for fl in json.loads(out)["files"] for f in fl["findings"]]
+        assert [f["text"] for f in findings] == ["It — mostly — waits."]
+
+    def test_a_single_sentence_comment_reports_the_same_either_way(self, project, capsys):
+        (project / "p.ts").write_text(self.DASH, encoding="utf-8")
+        _, plain = run(["p.ts", "--json", "--threshold", "0.99", "--enable-rule", "P15"], capsys)
+        _, split = run(["p.ts", "--json", "--threshold", "0.99", "--enable-rule", "P15",
+                        "--split-sentences", "--no-cache"], capsys)
+        one = [f for fl in json.loads(plain)["files"] for f in fl["findings"]][0]
+        two = [f for fl in json.loads(split)["files"] for f in fl["findings"]][0]
+        assert one["rule"] == two["rule"] and one["clauses"] == two["clauses"]
+        assert two["text"] == " ".join(one["text"].split())
+
+    def test_split_sentences_concise_still_tags_flag(self, project, capsys):
+        (project / "p.ts").write_text(self.TWO_FENCES, encoding="utf-8")
+        _, out = run(["p.ts", "--threshold", "0.99", "--enable-rule", "P15",
+                      "--split-sentences", "--concise"], capsys)
+        errors = out.split("Errors:")[1]
+        assert errors.count("flag") == 2
+        assert "Cycles are legal in a VN" in errors and "A second offender lives here" in errors
+
+    def test_split_sentences_prints_two_findings_in_sentence_order(self, project, capsys):
+        # both share the comment's line and col, so the print order rests on a stable sort
+        (project / "p.ts").write_text(self.TWO_FENCES, encoding="utf-8")
+        _, out = run(["p.ts", "--threshold", "0.99", "--enable-rule", "P15",
+                      "--split-sentences"], capsys)
+        assert out.index(f"{SPAN_OPEN}Cycles are legal") < out.index(f"{SPAN_OPEN}A second offender")
 
     def test_list_rules_marks_p15_disabled(self, capsys):
         _, out = run(["--list-rules"], capsys)

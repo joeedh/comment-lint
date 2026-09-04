@@ -86,7 +86,9 @@ Each filter errs toward silence. That is deliberate.
     `source: "heuristic"`, rule `P14`, and a `clauses` list carrying the span texts,
     the way C13 carries `codepoints`. The comment is then not sent to the model, like
     C2 and C13: one hard finding per comment. Under `--split-sentences` this skips
-    every sentence of the flagged comment. The ts printer shows each clause dimmed
+    every sentence of the flagged comment. (Superseded by
+    docs/plans/split-sentences-heuristic-findings.md, which makes the flag report each
+    flagged sentence on its own and score the rest.) The ts printer shows each clause dimmed
     under the comment.
   - `--text` path: the checker runs too. One verdict line, `VIOLATION` when either the
     gate or the checker says so, then a `ruleP14 flag <clause>` line per span, then the

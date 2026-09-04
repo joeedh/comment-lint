@@ -7,3 +7,4 @@
 [x]: add a --init command line argument that writes a default .commentlintrc.json with every option present, commented out, and explained
 [x]: give P14 a deterministic checker for the sub-case a regex can decide (pronoun subject continuing the previous subject), on by default; the object-anchored gloss stays undetectable
 [x]: give P13 a deterministic checker for the comma-fenced alternative shape, and add P15 (paired-dash interpolation) as its own default-on rule
+[x]: make the deterministic checkers (P13/P14/P15) report per sentence under --split-sentences instead of claiming the whole comment

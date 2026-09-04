@@ -41,8 +41,10 @@ comment as a whole, so a long comment with one bad sentence is flagged on that s
 The report still prints the whole comment around it, with the flagged sentence bolded when
 color is on and wrapped in `[>` and `<]` when it is off, as on a redirected or piped
 stdout. The brackets are explained on one line before the first finding. Under `--json` the
-sentence is the finding's `text` and the comment it came from is added as `comment`. The
-config key is `splitSentences`.
+sentence is the finding's `text` and the comment it came from is added as `comment`, with
+`sentence_start` and `sentence_end` on a deterministic rule's finding. The
+deterministic rules report per sentence as well, so a comment with two dash-fenced
+sentences yields two findings. The config key is `splitSentences`.
 
 Report a comment the model should have flagged and did not, or one it flagged but
 shouldn't have. The text, and any note, revision or rule given with it, are appended to
